@@ -273,10 +273,13 @@ class App:
 
     # ---------------- Handlers ----------------
     def _refresh_ports(self):
-        ports = [p.device for p in serial.tools.list_ports.comports()]
+        ports = [
+            p.device for p in serial.tools.list_ports.comports()
+            if "ttyUSB" in p.device or "ttyACM" in p.device
+        ]
         self.cb_port["values"] = ports
-        if ports and not self.var_port.get():
-            self.var_port.set(ports[0])
+        if self.var_port.get() not in ports:
+            self.var_port.set(ports[0] if ports else "")
 
     def _browse_csv(self):
         path = filedialog.asksaveasfilename(
