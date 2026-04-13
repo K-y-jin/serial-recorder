@@ -44,6 +44,8 @@ class App:
         self.connected = False
         self.recording = False
         self.rotation_k = 0
+        self._last_save_ts = 0.0
+        self._save_interval = 1.0
 
         self._frame_count = 0
         self._fps_t0 = time.time()
@@ -198,9 +200,9 @@ class App:
         ttk.Entry(pkt_box, textvariable=self.var_post, width=6).grid(row=2, column=1, sticky="w", padx=4, pady=4)
 
         ttk.Label(pkt_box, text="Colormap", style="Panel.TLabel").grid(row=2, column=2, sticky="w", padx=4, pady=4)
-        self.var_cmap = tk.StringVar(value="viridis")
+        self.var_cmap = tk.StringVar(value="jet")
         cmap_cb = ttk.Combobox(pkt_box, textvariable=self.var_cmap, width=10, state="readonly",
-                               values=["viridis", "gray", "jet", "inferno", "magma"])
+                               values=["jet", "viridis", "gray", "inferno", "magma"])
         cmap_cb.grid(row=2, column=3, sticky="w", padx=4, pady=4)
         cmap_cb.bind("<<ComboboxSelected>>", lambda e: self._on_cmap_change())
 
@@ -210,8 +212,15 @@ class App:
 
         ttk.Label(rec_box, text="CSV file", style="Panel.TLabel").grid(row=0, column=0, sticky="w", padx=4, pady=4)
         self.var_csv = tk.StringVar(value="pressure_log.csv")
-        ttk.Entry(rec_box, textvariable=self.var_csv).grid(row=0, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Button(rec_box, text="Browse", command=self._browse_csv).grid(row=0, column=2, padx=4, pady=4)
+        ttk.Entry(rec_box, textvariable=self.var_csv).grid(row=0, column=1, columnspan=3, sticky="ew", padx=4, pady=4)
+        ttk.Button(rec_box, text="Browse", command=self._browse_csv).grid(row=0, column=4, padx=4, pady=4)
+
+        ttk.Label(rec_box, text="Interval (s)", style="Panel.TLabel").grid(row=1, column=0, sticky="w", padx=4, pady=4)
+        self.var_interval = tk.StringVar(value="1.0")
+        ttk.Entry(rec_box, textvariable=self.var_interval, width=8).grid(row=1, column=1, sticky="w", padx=4, pady=4)
+        ttk.Label(rec_box, text="(0 = every frame)", style="Muted.TLabel",
+                  background=PANEL).grid(row=1, column=2, sticky="w", padx=4, pady=4)
+
         rec_box.columnconfigure(1, weight=1)
 
         # --- Controls row ---
@@ -351,12 +360,21 @@ class App:
             messagebox.showerror("CSV", "CSV file path required")
             return
         try:
+            interval = float(self.var_interval.get())
+            if interval < 0:
+                raise ValueError("must be >= 0")
+        except Exception as e:
+            messagebox.showerror("CSV", f"Invalid interval: {e}")
+            return
+        try:
             self.logger = CsvLogger(path, self.cols, self.rows)
             self.logger.open()
         except Exception as e:
             messagebox.showerror("CSV", f"Cannot open file: {e}")
             self.logger = None
             return
+        self._save_interval = interval
+        self._last_save_ts = 0.0
         self.recording = True
         self._update_indicators()
 
@@ -443,10 +461,12 @@ class App:
                 display = raw
             self.view.update(np.rot90(display, k=self.rotation_k))
             if self.recording and self.logger is not None:
-                try:
-                    self.logger.write(ts, display)
-                except Exception:
-                    pass
+                if self._save_interval <= 0 or (ts - self._last_save_ts) >= self._save_interval:
+                    try:
+                        self.logger.write(ts, display)
+                        self._last_save_ts = ts
+                    except Exception:
+                        pass
             self._frame_count += drained
 
         now = time.time()

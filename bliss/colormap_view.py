@@ -11,7 +11,7 @@ class ColormapView:
         self.ax = self.figure.add_subplot(111)
         self._image = self.ax.imshow(
             np.zeros((rows, cols), dtype=np.uint8),
-            cmap="viridis",
+            cmap="jet",
             vmin=0,
             vmax=255,
             aspect="equal",
