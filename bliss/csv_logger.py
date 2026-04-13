@@ -1,10 +1,11 @@
 import csv
+import os
 from datetime import datetime
 
 
 class CsvLogger:
     def __init__(self, path, cols, rows):
-        self.path = path
+        self.path = os.path.expanduser(path)
         self.cols = cols
         self.rows = rows
         self._fh = None
@@ -12,6 +13,8 @@ class CsvLogger:
         self._count = 0
 
     def open(self):
+        parent = os.path.dirname(os.path.abspath(self.path))
+        os.makedirs(parent, exist_ok=True)
         self._fh = open(self.path, "w", newline="")
         self._writer = csv.writer(self._fh)
         header = ["timestamp"] + [f"c{i}" for i in range(self.cols * self.rows)]
