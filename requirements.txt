@@ -1,3 +1,5 @@
 pyserial
 numpy
 matplotlib
+# Optional: only needed for `python cmd/start.py --upload`
+# wandb

@@ -15,8 +15,10 @@ build/
 dist/
 *.manifest
 
-# CSV outputs
+# CSV outputs (allow bliss_logs/ which is the upload target)
 *.csv
+!bliss_logs/*.csv
+!bliss_logs/**/*.csv
 
 # IDE / OS
 .vscode/

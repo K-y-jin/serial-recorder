@@ -32,11 +32,18 @@ python cmd/start.py
 | `--post` | `2` | 페이로드 뒤 skip 바이트 |
 | `--interval` | `1.0` | 저장 주기 (초, `0` = 모든 프레임) |
 | `--outpath` | 자동 | 저장 파일명/경로 |
+| `--upload` | off | wandb로 실시간 메트릭 스트리밍 + CSV 아티팩트 주기 업로드 |
+| `--upload-interval` | `600` | 아티팩트 업로드 주기(초, 기본 10분) |
+| `--wandb-project` | `bliss-recorder` | wandb 프로젝트 이름 |
+| `--wandb-entity` | 계정 기본 | wandb entity (user/team) |
+| `--wandb-run-name` | 자동 | wandb run 이름 |
+
+기본 저장 디렉토리는 **프로젝트 루트의 `bliss_logs/`** 폴더입니다 (예: `<repo>/bliss_logs/bliss_<timestamp>.csv`).
 
 ## `--outpath` 규칙
 
-- **미지정**: `~/bliss_logs/bliss_<timestamp>.csv`
-- **파일명만**: `~/bliss_logs/<이름>.csv` (상대경로는 기본 디렉토리 기준)
+- **미지정**: `<project>/bliss_logs/bliss_<timestamp>.csv`
+- **파일명만**: `<project>/bliss_logs/<이름>.csv` (상대경로는 기본 디렉토리 기준)
 - **절대경로**: 그대로 사용
 - **확장자 없음**: 자동으로 `.csv` 추가
 - **`~`**: 홈 디렉토리로 확장
@@ -53,7 +60,7 @@ python cmd/start.py --port /dev/ttyUSB1
 
 # 파일명 지정 (확장자 자동)
 python cmd/start.py --outpath test_run_01
-# → ~/bliss_logs/test_run_01.csv
+# → <project>/bliss_logs/test_run_01.csv
 
 # 주기 500 ms
 python cmd/start.py --interval 0.5
@@ -66,7 +73,28 @@ python cmd/start.py --interval 0
 
 # 해상도/헤더 변경
 python cmd/start.py --cols 64 --rows 32 --header A55A --pre 6 --post 2
+
+# wandb로 업로드 (실시간 메트릭 + 10분마다 CSV 아티팩트)
+python cmd/start.py --upload --wandb-project bliss-recorder --wandb-run-name bed01
+
+# 다른 entity (팀 계정)
+python cmd/start.py --upload --wandb-entity myteam --wandb-project bliss
 ```
+
+### `--upload` (wandb) 사용 조건
+
+1. **wandb 설치 및 로그인**:
+   ```bash
+   pip install wandb
+   wandb login   # API key 한 번 입력
+   ```
+2. 동작:
+   - `wandb.init(project=..., config={port, baud, cols, rows, ...})`로 run 시작
+   - 매 저장된 프레임마다 **스칼라 메트릭 `min / max / mean / saved_count`** 를 `wandb.log`로 스트리밍 → 대시보드에서 실시간 그래프로 확인
+   - `--upload-interval`초(기본 600)마다 현재 CSV 파일을 **Artifact**로 업로드 (버전링/증분 저장)
+   - Ctrl+C 종료 시 마지막 CSV를 `final` 태그로 한 번 더 업로드 후 `run.finish()`
+3. 실패 시 에러만 출력하고 녹화는 계속 진행됩니다 (오프라인 시도 역시 추후 재전송).
+4. wandb 오프라인 모드가 필요하면 `WANDB_MODE=offline python cmd/start.py --upload ...`
 
 ## 출력 예
 
@@ -130,3 +158,54 @@ python cmd/display.py run1.csv --cmap gray --rotate 1
 ```
 
 타이틀에 프레임 번호, 타임스탬프, min/max/mean이 표시됩니다.
+
+---
+
+# Calibration (`cmd/calibration.py`)
+
+센서 baseline을 측정하여 CSV로 저장. N 프레임 평균값을 baseline으로 사용.
+
+## 실행
+
+```bash
+python cmd/calibration.py [--samples 10] [--port /dev/ttyUSB0] [--outpath name]
+```
+
+## 옵션
+
+| 인자 | 기본값 | 설명 |
+|---|---|---|
+| `--port` | `/dev/ttyUSB0` | 시리얼 포트 |
+| `--samples` | `10` | 평균 낼 프레임 수 |
+| `--timeout` | `10.0` | 프레임 수신 최대 대기 시간 (초) |
+| `--outpath` | 자동 | `~/bliss_logs/baseline_<timestamp>.csv` |
+| `--baud`, `--cols`, `--rows`, `--header`, `--pre`, `--post` | GUI 기본값 | |
+
+## 예시
+
+```bash
+# 10 프레임 평균으로 baseline 저장
+python cmd/calibration.py
+
+# 30 프레임 평균, 파일명 지정
+python cmd/calibration.py --samples 30 --outpath bed_empty
+# → ~/bliss_logs/bed_empty.csv
+
+# 다른 포트
+python cmd/calibration.py --port /dev/ttyUSB1
+```
+
+출력 예:
+
+```
+[cal] target: 10 frames averaged
+[cfg] port=/dev/ttyUSB0 baud=921600 cols=32 rows=64
+[serial] Connected to /dev/ttyUSB0
+  captured 1/10  min=2 max=35 mean=12.34
+  captured 2/10  min=2 max=34 mean=12.28
+  ...
+[cal] averaged 10 frames  min=2 max=34 mean=12.31
+[cal] baseline saved -> /home/nrc/bliss_logs/baseline_20260414_153045.csv
+```
+
+저장 형식은 1프레임짜리 CSV (start.py의 CSV와 동일 포맷) 이므로 `display.py`로 열거나 후속 분석 스크립트에서 차감에 사용할 수 있습니다.
