@@ -27,7 +27,7 @@ from bliss.serial_reader import SerialReader
 
 
 DEFAULT_PORT = "/dev/ttyUSB0"
-DEFAULT_OUT_DIR = os.path.join(_PROJECT_ROOT, "bliss_logs")
+DEFAULT_OUT_DIR = os.path.join(os.path.expanduser("~"), "bliss_logs")
 
 
 def build_parser():

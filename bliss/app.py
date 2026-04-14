@@ -212,9 +212,8 @@ class App:
         rec_box.pack(fill=tk.X, pady=(10, 0))
 
         ttk.Label(rec_box, text="CSV file", style="Panel.TLabel").grid(row=0, column=0, sticky="w", padx=4, pady=4)
-        _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.var_csv = tk.StringVar(
-            value=os.path.join(_project_root, "bliss_logs", "pressure_log.csv")
+            value=os.path.join(os.path.expanduser("~"), "bliss_logs", "pressure_log.csv")
         )
         ttk.Entry(rec_box, textvariable=self.var_csv).grid(row=0, column=1, columnspan=3, sticky="ew", padx=4, pady=4)
         ttk.Button(rec_box, text="Browse", command=self._browse_csv).grid(row=0, column=4, padx=4, pady=4)

@@ -38,12 +38,12 @@ python cmd/start.py
 | `--wandb-entity` | 계정 기본 | wandb entity (user/team) |
 | `--wandb-run-name` | 자동 | wandb run 이름 |
 
-기본 저장 디렉토리는 **프로젝트 루트의 `bliss_logs/`** 폴더입니다 (예: `<repo>/bliss_logs/bliss_<timestamp>.csv`).
+기본 저장 디렉토리는 **`~/bliss_logs/`** 입니다 (예: `~/bliss_logs/bliss_<timestamp>.csv`).
 
 ## `--outpath` 규칙
 
-- **미지정**: `<project>/bliss_logs/bliss_<timestamp>.csv`
-- **파일명만**: `<project>/bliss_logs/<이름>.csv` (상대경로는 기본 디렉토리 기준)
+- **미지정**: `~/bliss_logs/bliss_<timestamp>.csv`
+- **파일명만**: `~/bliss_logs/<이름>.csv` (상대경로는 기본 디렉토리 기준)
 - **절대경로**: 그대로 사용
 - **확장자 없음**: 자동으로 `.csv` 추가
 - **`~`**: 홈 디렉토리로 확장
@@ -60,7 +60,7 @@ python cmd/start.py --port /dev/ttyUSB1
 
 # 파일명 지정 (확장자 자동)
 python cmd/start.py --outpath test_run_01
-# → <project>/bliss_logs/test_run_01.csv
+# → ~/bliss_logs/test_run_01.csv
 
 # 주기 500 ms
 python cmd/start.py --interval 0.5
