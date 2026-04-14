@@ -45,8 +45,10 @@ def build_parser():
                    help=f"output CSV path (default: {DEFAULT_OUT_DIR}/bliss_<timestamp>.csv)")
     p.add_argument("--upload", action="store_true",
                    help="stream metrics to wandb and upload CSV as artifact periodically")
-    p.add_argument("--upload-interval", type=float, default=600.0,
-                   help="CSV artifact upload period in seconds (default 600 = 10 min)")
+    p.add_argument("--upload-interval", type=float, default=86400.0,
+                   help="CSV upload period in seconds (default 86400 = 1 day). "
+                        "After each upload, recording rotates to a new file "
+                        "with a (2), (3), ... suffix.")
     p.add_argument("--wandb-project", default="bliss-recorder", help="wandb project name")
     p.add_argument("--wandb-entity", default=None, help="wandb entity (user/team)")
     p.add_argument("--wandb-run-name", default=None, help="wandb run name (default: auto)")
@@ -67,20 +69,21 @@ def resolve_outpath(raw):
 
 
 class WandbUploader:
-    """Streams scalar metrics to wandb and uploads the CSV file as an artifact
-    every `interval` seconds (and once at shutdown)."""
+    """Streams scalar metrics to wandb. The Recorder owns the CSV file;
+    at each interval the Recorder rotates to a new file and hands the
+    closed file path back for artifact upload."""
 
-    def __init__(self, args, outpath, stop_event):
+    def __init__(self, args, outpath, stop_event, recorder):
         try:
             import wandb  # noqa: F401
         except ImportError as e:
             raise RuntimeError("wandb not installed. Run: pip install wandb") from e
         import wandb
         self.wandb = wandb
-        self.outpath = outpath
-        self.artifact_name = os.path.splitext(os.path.basename(outpath))[0]
+        self.base_name = os.path.splitext(os.path.basename(outpath))[0]
         self.interval = args.upload_interval
         self.stop_event = stop_event
+        self.recorder = recorder
         self.run = wandb.init(
             project=args.wandb_project,
             entity=args.wandb_entity,
@@ -115,20 +118,24 @@ class WandbUploader:
             step=saved_count,
         )
 
-    def _upload_artifact(self, final=False):
-        if not os.path.exists(self.outpath):
-            print("[wandb] file missing, skipping upload", flush=True)
+    def _upload_file(self, path, final=False):
+        if not os.path.exists(path):
+            print(f"[wandb] file missing, skipping upload: {path}", flush=True)
             return
         try:
             art = self.wandb.Artifact(
-                name=self.artifact_name,
+                name=self.base_name,
                 type="sensor-log",
-                metadata={"final": final, "uploaded_at": time.time()},
+                metadata={
+                    "final": final,
+                    "uploaded_at": time.time(),
+                    "source_file": os.path.basename(path),
+                },
             )
-            art.add_file(self.outpath)
+            art.add_file(path)
             self.run.log_artifact(art)
             tag = "final" if final else "periodic"
-            print(f"[wandb] uploaded artifact ({tag}) <- {self.outpath}", flush=True)
+            print(f"[wandb] uploaded artifact ({tag}) <- {path}", flush=True)
         except Exception as e:
             print(f"[wandb] upload failed: {e}", file=sys.stderr, flush=True)
 
@@ -136,11 +143,15 @@ class WandbUploader:
         while not self.stop_event.is_set():
             if self.stop_event.wait(self.interval):
                 break
-            self._upload_artifact(final=False)
+            closed_path = self.recorder.rotate()
+            if closed_path is not None:
+                self._upload_file(closed_path, final=False)
 
     def shutdown(self):
         try:
-            self._upload_artifact(final=True)
+            current = self.recorder.current_outpath
+            if current is not None:
+                self._upload_file(current, final=True)
         finally:
             try:
                 self.run.finish()
@@ -158,16 +169,45 @@ class Recorder:
         self.frame_count = 0
         self.saved_count = 0
         self.uploader = None
+        self.base_outpath = None
+        self.current_outpath = None
+        self.rotation_idx = 1
+        self.lock = threading.Lock()
+
+    def _next_rotated_path(self):
+        root, ext = os.path.splitext(self.base_outpath)
+        idx = self.rotation_idx + 1
+        while True:
+            candidate = f"{root} ({idx}){ext}"
+            if not os.path.exists(candidate):
+                return candidate, idx
+            idx += 1
+
+    def rotate(self):
+        """Close the current CSV, open the next rotated one, return the closed path."""
+        with self.lock:
+            if self.logger is None or self.current_outpath is None:
+                return None
+            closed = self.current_outpath
+            self.logger.close()
+            new_path, new_idx = self._next_rotated_path()
+            self.rotation_idx = new_idx
+            self.logger = CsvLogger(new_path, self.args.cols, self.args.rows)
+            self.logger.open()
+            self.current_outpath = new_path
+            print(f"[rec] rotated -> {new_path}", flush=True)
+            return closed
 
     def on_frame(self, ts, frame):
         self.frame_count += 1
         if self.interval <= 0 or (ts - self.last_save_ts) >= self.interval:
             self.last_save_ts = ts
-            try:
-                self.logger.write(ts, frame)
-                self.saved_count += 1
-            except Exception as e:
-                print(f"[write error] {e}", file=sys.stderr)
+            with self.lock:
+                try:
+                    self.logger.write(ts, frame)
+                    self.saved_count += 1
+                except Exception as e:
+                    print(f"[write error] {e}", file=sys.stderr)
             fmin = int(frame.min())
             fmax = int(frame.max())
             fmean = float(frame.mean())
@@ -205,6 +245,8 @@ class Recorder:
         if not header:
             raise ValueError("--header must not be empty")
 
+        self.base_outpath = outpath
+        self.current_outpath = outpath
         self.logger = CsvLogger(outpath, args.cols, args.rows)
         self.logger.open()
         print(f"[rec] writing to {outpath}", flush=True)
@@ -217,7 +259,7 @@ class Recorder:
         )
 
         if args.upload:
-            self.uploader = WandbUploader(args, outpath, self.stop_event)
+            self.uploader = WandbUploader(args, outpath, self.stop_event, self)
             self.uploader.start()
 
         parser = FrameParser(args.cols, args.rows, header, args.pre, args.post, self.on_frame)
@@ -235,10 +277,16 @@ class Recorder:
                 self.stop_event.wait(0.5)
         finally:
             reader.stop()
-            self.logger.close()
+            # Close the CSV first so all buffered rows are flushed to disk,
+            # then let the uploader push the finalized file as the final artifact.
+            with self.lock:
+                if self.logger is not None:
+                    self.logger.close()
+                    self.logger = None
             if self.uploader is not None:
                 self.uploader.shutdown()
-            print(f"[rec] stopped. saved {self.saved_count} frames -> {outpath}", flush=True)
+            print(f"[rec] stopped. saved {self.saved_count} frames "
+                  f"-> {self.current_outpath}", flush=True)
 
 
 def main(argv=None):

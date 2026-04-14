@@ -32,8 +32,8 @@ python cmd/start.py
 | `--post` | `2` | 페이로드 뒤 skip 바이트 |
 | `--interval` | `1.0` | 저장 주기 (초, `0` = 모든 프레임) |
 | `--outpath` | 자동 | 저장 파일명/경로 |
-| `--upload` | off | wandb로 실시간 메트릭 스트리밍 + CSV 아티팩트 주기 업로드 |
-| `--upload-interval` | `600` | 아티팩트 업로드 주기(초, 기본 10분) |
+| `--upload` | off | wandb로 실시간 메트릭 스트리밍 + CSV 아티팩트 주기 업로드 (업로드 시 파일 rotate) |
+| `--upload-interval` | `86400` | 업로드 주기(초, 기본 1일) — 이 주기마다 현재 CSV를 업로드하고 새 파일로 이어 쓰기 |
 | `--wandb-project` | `bliss-recorder` | wandb 프로젝트 이름 |
 | `--wandb-entity` | 계정 기본 | wandb entity (user/team) |
 | `--wandb-run-name` | 자동 | wandb run 이름 |
@@ -91,8 +91,11 @@ python cmd/start.py --upload --wandb-entity myteam --wandb-project bliss
 2. 동작:
    - `wandb.init(project=..., config={port, baud, cols, rows, ...})`로 run 시작
    - 매 저장된 프레임마다 **스칼라 메트릭 `min / max / mean / saved_count`** 를 `wandb.log`로 스트리밍 → 대시보드에서 실시간 그래프로 확인
-   - `--upload-interval`초(기본 600)마다 현재 CSV 파일을 **Artifact**로 업로드 (버전링/증분 저장)
-   - Ctrl+C 종료 시 마지막 CSV를 `final` 태그로 한 번 더 업로드 후 `run.finish()`
+   - `--upload-interval`초(기본 86400 = 1일)마다:
+     1. 현재 CSV 파일을 close
+     2. **Artifact로 업로드** (버전링, 여러 day가 같은 artifact name의 버전으로 누적됨)
+     3. 파일명을 `<base> (2).csv`, `<base> (3).csv`, ... 로 **자동 rotate**하여 새 파일에 이어서 녹화
+   - Ctrl+C 종료 시 현재 진행 중인 CSV를 `final` 태그로 한 번 더 업로드 후 `run.finish()`
 3. 실패 시 에러만 출력하고 녹화는 계속 진행됩니다 (오프라인 시도 역시 추후 재전송).
 4. wandb 오프라인 모드가 필요하면 `WANDB_MODE=offline python cmd/start.py --upload ...`
 
