@@ -96,8 +96,13 @@ python cmd/start.py --upload --wandb-entity myteam --wandb-project bliss
      2. **Artifact로 업로드** (버전링, 여러 day가 같은 artifact name의 버전으로 누적됨)
      3. 파일명을 `<base> (2).csv`, `<base> (3).csv`, ... 로 **자동 rotate**하여 새 파일에 이어서 녹화
    - Ctrl+C 종료 시 현재 진행 중인 CSV를 `final` 태그로 한 번 더 업로드 후 `run.finish()`
-3. 실패 시 에러만 출력하고 녹화는 계속 진행됩니다 (오프라인 시도 역시 추후 재전송).
-4. wandb 오프라인 모드가 필요하면 `WANDB_MODE=offline python cmd/start.py --upload ...`
+3. **네트워크 회복력 (wifi 단절 대응)**:
+   - `wandb.init` 실패 시 백그라운드에서 30초 간격으로 자동 재시도 — 네트워크가 돌아올 때까지 계속
+   - `wandb.log` 실패는 무시 (wandb SDK가 내부적으로 재전송)
+   - **artifact 업로드 실패 시 메모리 큐에 보관** → 다음 인터벌과 종료 시점에 재시도
+   - 종료 시까지 실패한 파일은 디스크에 그대로 남고 콘솔에 경로 출력 → 나중에 `wandb artifact put`로 수동 업로드 가능
+4. CSV 저장은 wandb 상태와 독립적으로 동작 — 인터넷이 끊겨도 녹화는 멈추지 않습니다.
+5. wandb 오프라인 모드가 필요하면 `WANDB_MODE=offline python cmd/start.py --upload ...`
 
 ## 출력 예
 

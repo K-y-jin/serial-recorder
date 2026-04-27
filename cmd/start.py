@@ -71,7 +71,16 @@ def resolve_outpath(raw):
 class WandbUploader:
     """Streams scalar metrics to wandb. The Recorder owns the CSV file;
     at each interval the Recorder rotates to a new file and hands the
-    closed file path back for artifact upload."""
+    closed file path back for artifact upload.
+
+    Resilient to network drops:
+      - wandb.init is retried in the background until it succeeds
+      - log() failures are swallowed (wandb has its own internal retry)
+      - failed artifact uploads are queued and retried each interval
+        (and once more at shutdown)
+    """
+
+    INIT_RETRY_S = 30.0
 
     def __init__(self, args, outpath, stop_event, recorder):
         try:
@@ -80,48 +89,101 @@ class WandbUploader:
             raise RuntimeError("wandb not installed. Run: pip install wandb") from e
         import wandb
         self.wandb = wandb
+        self.args = args
         self.base_name = os.path.splitext(os.path.basename(outpath))[0]
         self.interval = args.upload_interval
         self.stop_event = stop_event
         self.recorder = recorder
-        self.run = wandb.init(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=args.wandb_run_name,
-            config={
-                "port": args.port,
-                "baud": args.baud,
-                "cols": args.cols,
-                "rows": args.rows,
-                "header": args.header,
-                "pre": args.pre,
-                "post": args.post,
-                "save_interval": args.interval,
-                "outpath": outpath,
-            },
-            reinit=True,
-        )
-        print(f"[wandb] run: {self.run.url}", flush=True)
+        self.run = None
+        self._wandb_config = {
+            "port": args.port,
+            "baud": args.baud,
+            "cols": args.cols,
+            "rows": args.rows,
+            "header": args.header,
+            "pre": args.pre,
+            "post": args.post,
+            "save_interval": args.interval,
+            "outpath": outpath,
+        }
+        self._pending = []  # list of (path, final_flag) waiting to upload
+        self._pending_lock = threading.Lock()
+        self._init_failures = 0
+        self._log_failures = 0
         self._thread = threading.Thread(target=self._loop, daemon=True)
 
     def start(self):
+        # Attempt the first init synchronously so the user sees the run URL
+        # immediately when network is up; if it fails we retry in the loop.
+        self._try_init()
         self._thread.start()
 
-    def log_frame(self, ts, frame, saved_count):
-        self.wandb.log(
-            {
-                "min": int(frame.min()),
-                "max": int(frame.max()),
-                "mean": float(frame.mean()),
-                "saved_count": saved_count,
-            },
-            step=saved_count,
-        )
+    def _try_init(self):
+        if self.run is not None:
+            return True
+        try:
+            self.run = self.wandb.init(
+                project=self.args.wandb_project,
+                entity=self.args.wandb_entity,
+                name=self.args.wandb_run_name,
+                config=self._wandb_config,
+                reinit=True,
+            )
+            print(f"[wandb] run: {self.run.url}", flush=True)
+            self._init_failures = 0
+            return True
+        except Exception as e:
+            self._init_failures += 1
+            if self._init_failures <= 3 or self._init_failures % 10 == 0:
+                print(f"[wandb] init failed (attempt {self._init_failures}): {e}. "
+                      f"Will retry.", file=sys.stderr, flush=True)
+            self.run = None
+            return False
 
-    def _upload_file(self, path, final=False):
-        if not os.path.exists(path):
-            print(f"[wandb] file missing, skipping upload: {path}", flush=True)
+    def log_frame(self, ts, frame, saved_count):
+        if self.run is None:
+            return  # not connected yet; metric stream resumes after init succeeds
+        try:
+            self.wandb.log(
+                {
+                    "min": int(frame.min()),
+                    "max": int(frame.max()),
+                    "mean": float(frame.mean()),
+                    "saved_count": saved_count,
+                },
+                step=saved_count,
+            )
+            self._log_failures = 0
+        except Exception as e:
+            self._log_failures += 1
+            if self._log_failures <= 3 or self._log_failures % 50 == 0:
+                print(f"[wandb] log failed (#{self._log_failures}): {e}",
+                      file=sys.stderr, flush=True)
+
+    def _enqueue(self, path, final):
+        with self._pending_lock:
+            self._pending.append((path, final))
+
+    def _flush_pending(self):
+        if self.run is None:
             return
+        with self._pending_lock:
+            queue = list(self._pending)
+            self._pending.clear()
+        leftover = []
+        for path, final in queue:
+            if not self._upload_once(path, final):
+                leftover.append((path, final))
+        if leftover:
+            with self._pending_lock:
+                # prepend so order is preserved on next attempt
+                self._pending = leftover + self._pending
+
+    def _upload_once(self, path, final):
+        """Single attempt. Returns True on success, False on failure."""
+        if not os.path.exists(path):
+            print(f"[wandb] file missing, dropping: {path}", flush=True)
+            return True  # don't keep retrying a missing file
         try:
             art = self.wandb.Artifact(
                 name=self.base_name,
@@ -136,27 +198,61 @@ class WandbUploader:
             self.run.log_artifact(art)
             tag = "final" if final else "periodic"
             print(f"[wandb] uploaded artifact ({tag}) <- {path}", flush=True)
+            return True
         except Exception as e:
-            print(f"[wandb] upload failed: {e}", file=sys.stderr, flush=True)
+            print(f"[wandb] upload failed for {path}: {e}. Will retry.",
+                  file=sys.stderr, flush=True)
+            return False
+
+    def _upload_file(self, path, final=False):
+        """Try to upload now; on failure, enqueue for retry."""
+        if self.run is None or not self._upload_once(path, final):
+            self._enqueue(path, final)
 
     def _loop(self):
         while not self.stop_event.is_set():
+            # If init didn't succeed yet, retry on a short cycle.
+            if self.run is None:
+                if self.stop_event.wait(self.INIT_RETRY_S):
+                    break
+                self._try_init()
+                continue
+
             if self.stop_event.wait(self.interval):
                 break
+
+            # Always try the pending queue first, in case prior intervals failed.
+            self._flush_pending()
+
             closed_path = self.recorder.rotate()
             if closed_path is not None:
                 self._upload_file(closed_path, final=False)
 
     def shutdown(self):
         try:
+            # Attempt one last init if we never connected.
+            if self.run is None:
+                self._try_init()
+            if self.run is not None:
+                self._flush_pending()
             current = self.recorder.current_outpath
             if current is not None:
                 self._upload_file(current, final=True)
+            if self.run is not None:
+                self._flush_pending()
+            with self._pending_lock:
+                if self._pending:
+                    print(f"[wandb] {len(self._pending)} file(s) NOT uploaded "
+                          f"due to network. They remain on disk:",
+                          file=sys.stderr, flush=True)
+                    for path, _ in self._pending:
+                        print(f"  - {path}", file=sys.stderr, flush=True)
         finally:
-            try:
-                self.run.finish()
-            except Exception:
-                pass
+            if self.run is not None:
+                try:
+                    self.run.finish()
+                except Exception:
+                    pass
 
 
 class Recorder:
