@@ -8,6 +8,7 @@ Usage:
                         [--upload] [--upload-interval 600]
                         [--wandb-project NAME] [--wandb-entity NAME]
                         [--wandb-run-name NAME]
+                        [--dry-run] [--dry-fps 30]
 """
 import argparse
 import os
@@ -20,18 +21,20 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from bliss import config
-from bliss.csv_logger import CsvLogger
-from bliss.frame_parser import FrameParser
-from bliss.serial_reader import SerialReader
+import numpy as np
+
+from sensor import config
+from sensor.csv_logger import CsvLogger
+from sensor.frame_parser import FrameParser
+from sensor.serial_reader import SerialReader
 
 
 DEFAULT_PORT = "/dev/ttyUSB0"
-DEFAULT_OUT_DIR = os.path.join(os.path.expanduser("~"), "bliss_logs")
+DEFAULT_OUT_DIR = os.path.join(os.path.expanduser("~"), "sensor_logs")
 
 
 def build_parser():
-    p = argparse.ArgumentParser(prog="bliss.start", description="Bliss Recorder CLI")
+    p = argparse.ArgumentParser(prog="sensor.start", description="Sensor Recorder CLI")
     p.add_argument("--port", default=DEFAULT_PORT, help=f"Serial port (default: {DEFAULT_PORT})")
     p.add_argument("--baud", type=int, default=config.DEFAULT_BAUD)
     p.add_argument("--cols", type=int, default=config.DEFAULT_COLS)
@@ -42,22 +45,69 @@ def build_parser():
     p.add_argument("--interval", type=float, default=1.0,
                    help="save interval in seconds (default 1.0, 0 = every frame)")
     p.add_argument("--outpath", default=None,
-                   help=f"output CSV path (default: {DEFAULT_OUT_DIR}/bliss_<timestamp>.csv)")
+                   help=f"output CSV path (default: {DEFAULT_OUT_DIR}/sensor_<timestamp>.csv)")
     p.add_argument("--upload", action="store_true",
                    help="stream metrics to wandb and upload CSV as artifact periodically")
     p.add_argument("--upload-interval", type=float, default=86400.0,
                    help="CSV upload period in seconds (default 86400 = 1 day). "
                         "After each upload, recording rotates to a new file "
                         "with a (2), (3), ... suffix.")
-    p.add_argument("--wandb-project", default="bliss-recorder", help="wandb project name")
+    p.add_argument("--wandb-project", default="sensor-recorder", help="wandb project name")
     p.add_argument("--wandb-entity", default=None, help="wandb entity (user/team)")
     p.add_argument("--wandb-run-name", default=None, help="wandb run name (default: auto)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="generate synthetic frames instead of reading the serial port "
+                        "(for testing CSV writes, wandb upload, and network resilience)")
+    p.add_argument("--dry-fps", type=float, default=30.0,
+                   help="synthetic frame rate in dry-run mode (default 30)")
     return p
+
+
+class FakeReader:
+    """Synthetic frame producer for --dry-run. Mimics SerialReader.start/stop."""
+
+    def __init__(self, cols, rows, fps, on_frame, on_status=None):
+        self.cols = cols
+        self.rows = rows
+        self.period = 1.0 / max(fps, 1e-3)
+        self.on_frame = on_frame
+        self.on_status = on_status or (lambda c, m: None)
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self):
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+        self._thread = None
+
+    def _run(self):
+        self.on_status(True, "Dry-run: synthetic frames")
+        x = np.linspace(0, 4 * np.pi, self.cols, dtype=np.float32)
+        y = np.linspace(0, 4 * np.pi, self.rows, dtype=np.float32)
+        xx, yy = np.meshgrid(x, y)
+        i = 0
+        while not self._stop.is_set():
+            wave = 127 + 100 * np.sin(xx + i * 0.1) * np.cos(yy + i * 0.05)
+            frame = np.clip(wave, 0, 255).astype(np.uint8)
+            try:
+                self.on_frame(time.time(), frame)
+            except Exception:
+                pass
+            i += 1
+            if self._stop.wait(self.period):
+                break
+        self.on_status(False, "Dry-run: stopped")
 
 
 def resolve_outpath(raw):
     if raw is None:
-        fname = time.strftime("bliss_%Y%m%d_%H%M%S.csv")
+        fname = time.strftime("sensor_%Y%m%d_%H%M%S.csv")
         return os.path.join(DEFAULT_OUT_DIR, fname)
     path = os.path.expanduser(raw)
     root, ext = os.path.splitext(path)
@@ -326,12 +376,13 @@ class Recorder:
 
     def run(self):
         args = self.args
-        if args.port == DEFAULT_PORT and not os.path.exists(DEFAULT_PORT):
-            raise FileNotFoundError(
-                f"{DEFAULT_PORT} not found. Plug in the device or pass --port."
-            )
-        if not os.path.exists(args.port):
-            raise FileNotFoundError(f"Serial port not found: {args.port}")
+        if not args.dry_run:
+            if args.port == DEFAULT_PORT and not os.path.exists(DEFAULT_PORT):
+                raise FileNotFoundError(
+                    f"{DEFAULT_PORT} not found. Plug in the device or pass --port."
+                )
+            if not os.path.exists(args.port):
+                raise FileNotFoundError(f"Serial port not found: {args.port}")
 
         outpath = resolve_outpath(args.outpath)
         try:
@@ -358,8 +409,13 @@ class Recorder:
             self.uploader = WandbUploader(args, outpath, self.stop_event, self)
             self.uploader.start()
 
-        parser = FrameParser(args.cols, args.rows, header, args.pre, args.post, self.on_frame)
-        reader = SerialReader(args.port, args.baud, parser, on_status=self.on_status)
+        if args.dry_run:
+            print(f"[dry-run] generating synthetic frames at {args.dry_fps} fps", flush=True)
+            reader = FakeReader(args.cols, args.rows, args.dry_fps,
+                                self.on_frame, on_status=self.on_status)
+        else:
+            parser = FrameParser(args.cols, args.rows, header, args.pre, args.post, self.on_frame)
+            reader = SerialReader(args.port, args.baud, parser, on_status=self.on_status)
 
         def handle_sig(signum, frame):
             self.stop_event.set()

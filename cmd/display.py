@@ -1,4 +1,4 @@
-"""Display a CSV recorded by Bliss Recorder.
+"""Display a CSV recorded by Sensor Recorder.
 
 Usage:
     python cmd/display.py <csv_path> [--rows 64] [--cols 32]
@@ -19,12 +19,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-from bliss import config
+from sensor import config
 
 
 def build_parser():
-    p = argparse.ArgumentParser(prog="display", description="Bliss CSV player")
-    p.add_argument("csv_path", help="path to CSV recorded by Bliss Recorder")
+    p = argparse.ArgumentParser(prog="display", description="Sensor CSV player")
+    p.add_argument("csv_path", help="path to CSV recorded by Sensor Recorder")
     p.add_argument("--rows", type=int, default=config.DEFAULT_ROWS)
     p.add_argument("--cols", type=int, default=config.DEFAULT_COLS)
     p.add_argument("--cmap", default="jet")

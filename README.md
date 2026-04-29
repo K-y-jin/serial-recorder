@@ -1,4 +1,4 @@
-# Bliss Recorder
+# Sensor Recorder
 
 매트리스 압력 센서의 데이터를 시리얼 포트로 수신하여 실시간 colormap으로 표시하고 CSV로 저장하는 경량 GUI 프로그램.
 
@@ -20,8 +20,8 @@
 ## Install & Run
 
 ```bash
-git clone <repo-url> bliss_recorder
-cd bliss_recorder
+git clone <repo-url> sensor_recorder
+cd sensor_recorder
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -44,13 +44,13 @@ offset  size   field
 
 ## Controls
 
-| 버튼 | 동작 |
-|---|---|
-| Connect / Disconnect | 시리얼 연결 토글 (연결만으로 실시간 표시 동작) |
-| Start / Stop Recording | CSV 기록 토글 |
-| Calibrate / Reset Calibration | 현재 프레임을 baseline으로 저장 / 해제 |
-| ↺ CCW / ↻ CW | 디스플레이 90° 회전 (CSV에는 영향 없음) |
-| Refresh | 시리얼 포트 목록 갱신 |
+| 버튼                          | 동작                                           |
+| ----------------------------- | ---------------------------------------------- |
+| Connect / Disconnect          | 시리얼 연결 토글 (연결만으로 실시간 표시 동작) |
+| Start / Stop Recording        | CSV 기록 토글                                  |
+| Calibrate / Reset Calibration | 현재 프레임을 baseline으로 저장 / 해제         |
+| ↺ CCW / ↻ CW                  | 디스플레이 90° 회전 (CSV에는 영향 없음)        |
+| Refresh                       | 시리얼 포트 목록 갱신                          |
 
 ## CSV Format
 
@@ -66,19 +66,19 @@ timestamp,               c0, c1, c2, ..., c{rows*cols-1}
 
 ```bash
 pip install pyinstaller
-pyinstaller BlissRecorder.spec --clean --noconfirm
-./dist/BlissRecorder/BlissRecorder
+pyinstaller SensorRecorder.spec --clean --noconfirm
+./dist/SensorRecorder/SensorRecorder
 ```
 
-배포 시 `dist/BlissRecorder/` 폴더 전체를 압축해 전달.
+배포 시 `dist/SensorRecorder/` 폴더 전체를 압축해 전달.
 **PyInstaller는 크로스-아키텍처 빌드를 지원하지 않으므로 타겟 머신과 같은 OS/아키텍처에서 빌드해야 합니다** (예: Jetson Orin(aarch64)용은 Jetson에서 빌드).
 
 ## Project Structure
 
 ```
-bliss_recorder/
+sensor_recorder/
 ├── main.py
-├── bliss/
+├── sensor/
 │   ├── config.py          # 기본값 상수
 │   ├── serial_reader.py   # 시리얼 스레드 + 자동 재연결
 │   ├── frame_parser.py    # 헤더 동기화, 프레임 추출
@@ -87,7 +87,7 @@ bliss_recorder/
 │   └── app.py             # Tk GUI
 ├── tests/
 │   └── test_frame_parser.py
-├── BlissRecorder.spec     # PyInstaller
+├── SensorRecorder.spec     # PyInstaller
 ├── DESIGN.md              # 설계 문서
 └── requirements.txt
 ```

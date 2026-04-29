@@ -1,7 +1,7 @@
 """Capture a baseline frame for calibration.
 
 Connects to the sensor, averages N frames, and saves the result as
-    ~/bliss_logs/baseline_<timestamp>.csv
+    ~/sensor_logs/baseline_<timestamp>.csv
 
 Usage:
     python cmd/calibration.py [--port /dev/ttyUSB0] [--samples 10]
@@ -21,19 +21,19 @@ if _PROJECT_ROOT not in sys.path:
 
 import numpy as np
 
-from bliss import config
-from bliss.csv_logger import CsvLogger
-from bliss.frame_parser import FrameParser
-from bliss.serial_reader import SerialReader
+from sensor import config
+from sensor.csv_logger import CsvLogger
+from sensor.frame_parser import FrameParser
+from sensor.serial_reader import SerialReader
 
 
 DEFAULT_PORT = "/dev/ttyUSB0"
-DEFAULT_OUT_DIR = os.path.join(os.path.expanduser("~"), "bliss_logs")
+DEFAULT_OUT_DIR = os.path.join(os.path.expanduser("~"), "sensor_logs")
 
 
 def build_parser():
     p = argparse.ArgumentParser(prog="calibration",
-                                description="Capture baseline frame for Bliss Recorder")
+                                description="Capture baseline frame for Sensor Recorder")
     p.add_argument("--port", default=DEFAULT_PORT)
     p.add_argument("--baud", type=int, default=config.DEFAULT_BAUD)
     p.add_argument("--cols", type=int, default=config.DEFAULT_COLS)

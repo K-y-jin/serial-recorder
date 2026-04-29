@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from bliss.frame_parser import FrameParser
+from sensor.frame_parser import FrameParser
 
 
 def make_packet(header, pre, payload, post):

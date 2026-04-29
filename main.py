@@ -1,6 +1,6 @@
 import tkinter as tk
 
-from bliss.app import App
+from sensor.app import App
 
 
 def main():

@@ -31,7 +31,7 @@ BORDER     = "#3a3c4a"
 class App:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Bliss Recorder")
+        self.root.title("Sensor Recorder")
         self.root.minsize(960, 640)
         self.root.configure(bg=BG)
 
@@ -144,7 +144,7 @@ class App:
         outer = ttk.Frame(self.root, padding=12)
         outer.pack(fill=tk.BOTH, expand=True)
 
-        title = ttk.Label(outer, text="Bliss Recorder", style="Header.TLabel")
+        title = ttk.Label(outer, text="Sensor Recorder", style="Header.TLabel")
         title.pack(anchor="w", pady=(0, 8))
 
         # top: two columns of group boxes
@@ -213,7 +213,7 @@ class App:
 
         ttk.Label(rec_box, text="CSV file", style="Panel.TLabel").grid(row=0, column=0, sticky="w", padx=4, pady=4)
         self.var_csv = tk.StringVar(
-            value=os.path.join(os.path.expanduser("~"), "bliss_logs", "pressure_log.csv")
+            value=os.path.join(os.path.expanduser("~"), "sensor_logs", "pressure_log.csv")
         )
         ttk.Entry(rec_box, textvariable=self.var_csv).grid(row=0, column=1, columnspan=3, sticky="ew", padx=4, pady=4)
         ttk.Button(rec_box, text="Browse", command=self._browse_csv).grid(row=0, column=4, padx=4, pady=4)

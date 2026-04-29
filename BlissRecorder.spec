@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for Bliss Recorder
-# Build:  pyinstaller BlissRecorder.spec
+# PyInstaller spec for Sensor Recorder
+# Build:  pyinstaller SensorRecorder.spec
 
 from PyInstaller.utils.hooks import collect_data_files
 
@@ -42,7 +42,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="BlissRecorder",
+    name="SensorRecorder",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -62,5 +62,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="BlissRecorder",
+    name="SensorRecorder",
 )

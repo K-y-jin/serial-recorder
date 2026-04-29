@@ -1,4 +1,4 @@
-# Bliss Recorder — 프로그램 설계
+# Sensor Recorder — 프로그램 설계
 
 매트리스 압력 센서의 데이터를 시리얼로 읽어 실시간 colormap으로 표시하고, CSV로 저장하는 Python 프로그램.
 
@@ -19,16 +19,16 @@
 
 ## 2. 사양 (확정)
 
-| 항목 | 값 | 비고 |
-|---|---|---|
-| 센서 해상도 | **cols × rows = 64 × 32** (기본) | GUI에서 변경 가능 |
-| 셀당 비트 | **8-bit unsigned** | 1 byte/cell |
-| Baudrate | **921600** | 변경 가능 |
-| 프레임 헤더 | **`A5 5A`** (2 bytes, hex) | 변경 가능 |
-| 헤더 뒤 skip | **6 bytes** | 변경 가능 |
-| 페이로드 | `cols × rows` bytes (기본 2048) | |
-| 페이로드 뒤 skip | **2 bytes** | 변경 가능 (checksum/footer) |
-| 한 패킷 전체 길이 | `2 + 6 + (cols×rows) + 2` (기본 2058) | |
+| 항목              | 값                                    | 비고                        |
+| ----------------- | ------------------------------------- | --------------------------- |
+| 센서 해상도       | **cols × rows = 64 × 32** (기본)      | GUI에서 변경 가능           |
+| 셀당 비트         | **8-bit unsigned**                    | 1 byte/cell                 |
+| Baudrate          | **921600**                            | 변경 가능                   |
+| 프레임 헤더       | **`A5 5A`** (2 bytes, hex)            | 변경 가능                   |
+| 헤더 뒤 skip      | **6 bytes**                           | 변경 가능                   |
+| 페이로드          | `cols × rows` bytes (기본 2048)       |                             |
+| 페이로드 뒤 skip  | **2 bytes**                           | 변경 가능 (checksum/footer) |
+| 한 패킷 전체 길이 | `2 + 6 + (cols×rows) + 2` (기본 2058) |                             |
 
 ### 2.1 패킷 레이아웃
 
@@ -76,11 +76,11 @@ offset  size  field
 ## 5. 모듈 구조
 
 ```
-bliss_recorder/
+sensor_recorder/
 ├── DESIGN.md
 ├── requirements.txt
 ├── main.py                  # 진입점
-├── bliss/
+├── sensor/
 │   ├── __init__.py
 │   ├── config.py            # 기본값 (cols=64, rows=32, baud=921600, header=A55A, pre=6, post=2)
 │   ├── serial_reader.py     # SerialReader 스레드
@@ -95,6 +95,7 @@ bliss_recorder/
 ## 6. 주요 컴포넌트
 
 ### 6.1 `config.py`
+
 ```python
 DEFAULT_COLS = 64
 DEFAULT_ROWS = 32
@@ -104,7 +105,8 @@ DEFAULT_PRE_SKIP = 6
 DEFAULT_POST_SKIP = 2
 ```
 
-### 6.2 `SerialReader` ([bliss/serial_reader.py](bliss/serial_reader.py))
+### 6.2 `SerialReader` ([sensor/serial_reader.py](sensor/serial_reader.py))
+
 - `pyserial.Serial(port, baudrate, timeout=...)`
 - 백그라운드 스레드 루프:
   1. 포트 열기 (실패 시 1초 대기 후 재시도)
@@ -113,7 +115,8 @@ DEFAULT_POST_SKIP = 2
 - `stop()` 플래그로 graceful shutdown
 - 상태 콜백(`on_status(connected: bool, msg: str)`)으로 GUI에 연결/끊김/재연결 알림
 
-### 6.3 `FrameParser` ([bliss/frame_parser.py](bliss/frame_parser.py))
+### 6.3 `FrameParser` ([sensor/frame_parser.py](sensor/frame_parser.py))
+
 - 내부 바이트 버퍼(`bytearray`) 유지
 - 알고리즘:
   1. 버퍼에서 헤더(`A5 5A`) 검색
@@ -124,7 +127,8 @@ DEFAULT_POST_SKIP = 2
 - 파라미터(`cols, rows, header, pre_skip, post_skip`)는 생성자 주입 → 런타임 변경 시 재생성
 - **단위 테스트 대상**: 정상 프레임, 헤더 중간 끊김, 잡음 섞임, 부분 수신
 
-### 6.4 `CsvLogger` ([bliss/csv_logger.py](bliss/csv_logger.py))
+### 6.4 `CsvLogger` ([sensor/csv_logger.py](sensor/csv_logger.py))
+
 - 파일명은 사용자 지정
 - 헤더 행: `timestamp, c0, c1, ..., c{R*C-1}`
 - 데이터 행: `2026-04-13T12:34:56.789, v0, v1, ..., v{R*C-1}` (ISO 8601, ms 단위)
@@ -132,13 +136,15 @@ DEFAULT_POST_SKIP = 2
 - Calibration 활성 시 **보정값**이 기록됨
 - `csv.writer` + 주기적 `flush()`, Stop 시 close
 
-### 6.5 `ColormapView` ([bliss/colormap_view.py](bliss/colormap_view.py))
+### 6.5 `ColormapView` ([sensor/colormap_view.py](sensor/colormap_view.py))
+
 - `matplotlib.figure.Figure` + `FigureCanvasTkAgg`
 - `imshow(frame, cmap='viridis', vmin=0, vmax=255, aspect='equal')` (**범위 0–255 고정**, **셀 정사각형**)
 - `update(frame)`: shape 변경 감지 → `set_data` + `set_extent` (회전으로 rows/cols가 바뀌어도 자동 처리)
 - `set_cmap(name)`: 런타임 colormap 변경 (`viridis / gray / jet / inferno / magma`)
 
 ### 6.5.2 Rotation
+
 - `App.rotation_k ∈ {0,1,2,3}` 상태 보유 (90° 단위)
 - **↻ CW**: `k = (k - 1) % 4`, **↺ CCW**: `k = (k + 1) % 4`
 - 매 tick에서 `np.rot90(display, k=rotation_k)`으로 회전 후 view 업데이트
@@ -146,6 +152,7 @@ DEFAULT_POST_SKIP = 2
 - **표시 전용** — CSV는 원본(row-major) 순서로 저장
 
 ### 6.5.1 Calibration
+
 - `App`이 `baseline: np.ndarray | None` 상태 보유 (shape `rows × cols`, dtype `int16`)
 - **Calibration 버튼**: 다음 도착 프레임(또는 직전 프레임)을 캡처하여 `baseline = frame.astype(int16)` 저장
 - 매 tick 처리:
@@ -158,12 +165,13 @@ DEFAULT_POST_SKIP = 2
 - **Reset Calibration**: `baseline = None`
 - 해상도(cols/rows) 변경 시 baseline 자동 무효화
 
-### 6.6 `App` ([bliss/app.py](bliss/app.py))
+### 6.6 `App` ([sensor/app.py](sensor/app.py))
+
 Tk 윈도우 레이아웃:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ Bliss Recorder                                                   │
+│ Sensor Recorder                                                   │
 │ ┌─ Serial ───────────────┐ ┌─ Packet ──────────────────────────┐ │
 │ │ Port  [COM3 ▼] Refresh │ │ Cols [64]     Rows [32]           │ │
 │ │ Baud Rate [921600]     │ │ Header [A55A] Pre skip [6]        │ │
@@ -184,9 +192,9 @@ Tk 윈도우 레이아웃:
 
 **두 개의 독립 상태 머신**:
 
-| 상태 | 버튼 | 효과 |
-|---|---|---|
-| 연결 | Connect / Disconnect | 시리얼 스트림 + 실시간 표시 on/off |
+| 상태 | 버튼                   | 효과                               |
+| ---- | ---------------------- | ---------------------------------- |
+| 연결 | Connect / Disconnect   | 시리얼 스트림 + 실시간 표시 on/off |
 | 기록 | Start Rec. / Stop Rec. | CSV 쓰기 on/off (연결 중에만 가능) |
 
 - **Refresh**: `serial.tools.list_ports.comports()`로 포트 콤보박스 갱신
@@ -220,19 +228,19 @@ matplotlib
 ### 8.1 배포 빌드 (PyInstaller)
 
 - 빌드 의존성: `pip install pyinstaller`
-- spec 파일: [BlissRecorder.spec](BlissRecorder.spec)
+- spec 파일: [SensorRecorder.spec](SensorRecorder.spec)
   - `hiddenimports`: `serial.tools.list_ports_*` 플랫폼별 백엔드
   - `datas`: `matplotlib` 데이터 파일 자동 수집
   - `excludes`: PyQt/scipy/pandas 등 미사용 대용량 패키지 제외
   - `console=False`, `windowed` 빌드 (GUI 전용)
 - 빌드 명령:
   ```bash
-  pyinstaller BlissRecorder.spec            # 최초/재빌드
-  pyinstaller BlissRecorder.spec --clean    # 캐시 정리 후 빌드
+  pyinstaller SensorRecorder.spec            # 최초/재빌드
+  pyinstaller SensorRecorder.spec --clean    # 캐시 정리 후 빌드
   ```
-- 결과물: `dist/BlissRecorder/` 폴더 (실행 파일 + 런타임). 이 폴더를 통째로 배포.
+- 결과물: `dist/SensorRecorder/` 폴더 (실행 파일 + 런타임). 이 폴더를 통째로 배포.
 - **플랫폼별로 각자 빌드** 해야 함 (Windows exe는 Windows에서, Linux 바이너리는 Linux에서).
-- 아이콘 지정: spec의 `EXE(..., icon='bliss.ico')` 추가.
+- 아이콘 지정: spec의 `EXE(..., icon='sensor.ico')` 추가.
 
 ## 9. 마일스톤
 
