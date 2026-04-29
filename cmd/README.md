@@ -13,7 +13,7 @@ python cmd/start.py
 기본 동작:
 
 - 포트: `/dev/ttyUSB0`
-- 저장 경로: `~/sensor_logs/sensor_YYYYMMDD_HHMMSS.csv`
+- 저장 경로: `~/sensor_logs/log_YYYYMMDD_HHMMSS.csv`
 - 주기: 1초 (1 Hz)
 - 통신 설정: GUI 기본값과 동일 (`baud=921600, cols=32, rows=64, header=A55A, pre=6, post=2`)
 - 실행 즉시 녹화 시작, `Ctrl+C`로 중단

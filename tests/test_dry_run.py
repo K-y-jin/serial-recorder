@@ -84,7 +84,7 @@ class FakeWandb:
 def make_args(tmp_path, **overrides):
     p = build_parser()
     args = p.parse_args(["--dry-run"])
-    args.outpath = str(tmp_path / "test_log")  # will become test_log.csv
+    args.outdir = str(tmp_path)
     args.dry_fps = 30.0
     args.interval = 0.1
     for k, v in overrides.items():
@@ -96,10 +96,9 @@ def make_args(tmp_path, **overrides):
 
 def test_dry_run_writes_csv(tmp_path):
     """End-to-end: spawn the CLI in dry-run mode, kill it, verify CSV content."""
-    out = tmp_path / "drytest.csv"
     proc = subprocess.Popen(
         [sys.executable, os.path.join(ROOT, "cmd", "start.py"),
-         "--dry-run", "--outpath", str(out),
+         "--dry-run", "--outdir", str(tmp_path),
          "--interval", "0.05", "--dry-fps", "60"],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
@@ -109,13 +108,14 @@ def test_dry_run_writes_csv(tmp_path):
         proc.send_signal(subprocess.signal.SIGINT)
         proc.wait(timeout=10)
 
-    assert out.exists(), f"CSV was not created at {out}"
+    csvs = list(tmp_path.glob("log_*.csv"))
+    assert csvs, f"No log_*.csv created in {tmp_path}"
+    out = csvs[0]
     with open(out) as fh:
         reader = csv.reader(fh)
         rows = list(reader)
     assert rows[0][0] == "timestamp"
     assert len(rows) > 5, f"Too few rows: {len(rows)}"
-    # Each data row should have timestamp + cols*rows values
     expected_cols = 1 + 32 * 64
     assert len(rows[1]) == expected_cols
 

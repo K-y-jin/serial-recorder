@@ -1,7 +1,7 @@
 """Headless CLI recorder.
 
 Usage:
-    python cmd/start.py [--port /dev/ttyUSB0] [--outpath my_log]
+    python cmd/start.py [--port /dev/ttyUSB0] [--outdir DIR]
                         [--baud 921600] [--cols 32] [--rows 64]
                         [--header A55A] [--pre 6] [--post 2]
                         [--interval 1.0]
@@ -44,8 +44,9 @@ def build_parser():
     p.add_argument("--post", type=int, default=config.DEFAULT_POST_SKIP)
     p.add_argument("--interval", type=float, default=1.0,
                    help="save interval in seconds (default 1.0, 0 = every frame)")
-    p.add_argument("--outpath", default=None,
-                   help=f"output CSV path (default: {DEFAULT_OUT_DIR}/sensor_<timestamp>.csv)")
+    p.add_argument("--outdir", default=None,
+                   help=f"output directory (default: {DEFAULT_OUT_DIR}). "
+                        f"File name is always log_<timestamp>.csv")
     p.add_argument("--upload", action="store_true",
                    help="stream metrics to wandb and upload CSV as artifact periodically")
     p.add_argument("--upload-interval", type=float, default=86400.0,
@@ -105,17 +106,17 @@ class FakeReader:
         self.on_status(False, "Dry-run: stopped")
 
 
-def resolve_outpath(raw):
-    if raw is None:
-        fname = time.strftime("sensor_%Y%m%d_%H%M%S.csv")
-        return os.path.join(DEFAULT_OUT_DIR, fname)
-    path = os.path.expanduser(raw)
-    root, ext = os.path.splitext(path)
-    if not ext:
-        path = root + ".csv"
-    if not os.path.isabs(path):
-        path = os.path.join(DEFAULT_OUT_DIR, path)
-    return path
+def resolve_outpath(outdir):
+    """Build the output CSV path from a directory. Filename is always
+    log_<timestamp>.csv. Relative dirs resolve under DEFAULT_OUT_DIR."""
+    if outdir is None or outdir == "":
+        directory = DEFAULT_OUT_DIR
+    else:
+        directory = os.path.expanduser(outdir)
+        if not os.path.isabs(directory):
+            directory = os.path.join(DEFAULT_OUT_DIR, directory)
+    fname = time.strftime("log_%Y%m%d_%H%M%S.csv")
+    return os.path.join(directory, fname)
 
 
 class WandbUploader:
@@ -384,7 +385,7 @@ class Recorder:
             if not os.path.exists(args.port):
                 raise FileNotFoundError(f"Serial port not found: {args.port}")
 
-        outpath = resolve_outpath(args.outpath)
+        outpath = resolve_outpath(args.outdir)
         try:
             header = bytes.fromhex(args.header.strip().replace(" ", ""))
         except ValueError as e:
