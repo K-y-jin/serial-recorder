@@ -33,11 +33,12 @@ python cmd/start.py
 | `--post`            | `2`               | 페이로드 뒤 skip 바이트                                                           |
 | `--interval`        | `1.0`             | 저장 주기 (초, `0` = 모든 프레임)                                                 |
 | `--outdir`          | `~/sensor_logs/`  | 저장 디렉토리 (파일명은 항상 `log_<timestamp>.csv`)                               |
-| `--upload`          | off               | wandb로 실시간 메트릭 스트리밍 + CSV 아티팩트 주기 업로드 (업로드 시 파일 rotate) |
-| `--upload-interval` | `86400`           | 업로드 주기(초, 기본 1일) — 이 주기마다 현재 CSV를 업로드하고 새 파일로 이어 쓰기 |
-| `--wandb-project`   | `sensor-recorder` | wandb 프로젝트 이름                                                               |
-| `--wandb-entity`    | 계정 기본         | wandb entity (user/team)                                                          |
-| `--wandb-run-name`  | 자동              | wandb run 이름                                                                    |
+| `--upload`              | off               | wandb로 실시간 메트릭 스트리밍 + CSV 아티팩트 업로드. 파일은 **시스템 날짜 변경 시 자동 회전** |
+| `--upload-interval`     | `60`              | 날짜 변경 폴링/pending 재시도 주기(초)                                                       |
+| `--wandb-project`       | `sensor-recorder` | wandb 프로젝트 이름                                                                          |
+| `--wandb-entity`        | 계정 기본         | wandb entity (user/team)                                                                     |
+| `--wandb-run-name`      | 자동              | wandb run 이름                                                                               |
+| `--wandb-offline-after` | `10`              | 온라인 init 실패 N회 후 자동으로 offline 모드 전환 (RAM 보호). 0 = 비활성                    |
 | `--dry-run`         | off               | 시리얼 대신 합성 프레임 생성 (장비 없이 CSV/wandb 동작 검증)                      |
 | `--dry-fps`         | `30`              | 합성 프레임 레이트                                                                |
 
@@ -121,16 +122,19 @@ python -m pytest tests/test_dry_run.py -v
 2. 동작:
    - `wandb.init(project=..., config={port, baud, cols, rows, ...})`로 run 시작
    - 매 저장된 프레임마다 **스칼라 메트릭 `min / max / mean / saved_count`** 를 `wandb.log`로 스트리밍 → 대시보드에서 실시간 그래프로 확인
-   - `--upload-interval`초(기본 86400 = 1일)마다:
-     1. 현재 CSV 파일을 close
-     2. **Artifact로 업로드** (버전링, 여러 day가 같은 artifact name의 버전으로 누적됨)
-     3. 파일명을 `<base> (2).csv`, `<base> (3).csv`, ... 로 **자동 rotate**하여 새 파일에 이어서 녹화
+   - **파일 회전은 시스템 날짜가 바뀔 때 자동 발생**:
+     - 첫 파일: `log_<YYYYMMDD_HHMMSS>.csv` (프로그램 시작 시각)
+     - 이후 매일 자정: 현재 CSV close → wandb artifact 업로드 → 새 파일 `log_<YYYYMMDD>.csv` 로 이어 쓰기
+     - 같은 날짜에 이미 파일이 있으면 `(2)`, `(3)` 자동 추가
    - Ctrl+C 종료 시 현재 진행 중인 CSV를 `final` 태그로 한 번 더 업로드 후 `run.finish()`
 3. **네트워크 회복력 (wifi 단절 대응)**:
-   - `wandb.init` 실패 시 백그라운드에서 30초 간격으로 자동 재시도 — 네트워크가 돌아올 때까지 계속
-   - `wandb.log` 실패는 무시 (wandb SDK가 내부적으로 재전송)
-   - **artifact 업로드 실패 시 메모리 큐에 보관** → 다음 인터벌과 종료 시점에 재시도
-   - 종료 시까지 실패한 파일은 디스크에 그대로 남고 콘솔에 경로 출력 → 나중에 `wandb artifact put`로 수동 업로드 가능
+   - `wandb.init` 실패 시 백그라운드에서 30초 간격으로 자동 재시도
+   - **`--wandb-offline-after` 회 (기본 10)** 연속 실패 시 자동으로 **wandb offline 모드 전환** → 로그를 RAM 대신 디스크에 누적 (장기 단절 시 OOM 방지). 네트워크 복구 후 `wandb sync` 로 수동 업로드
+   - `wandb.log` 실패는 무시 (wandb SDK가 자체 재시도)
+   - **artifact 업로드 실패 시 메모리 큐에 보관** → 다음 폴링과 종료 시점에 재시도
+   - 연속 업로드 실패가 3회 누적되면 **`wandb.log()` 호출을 일시 정지** (SDK 내부 큐의 RAM 누적 방지). 업로드 성공 시 자동 재개
+   - **파일 회전은 wandb 상태와 무관하게 시스템 날짜 변경 시 발생** → wifi가 며칠 끊겨도 하루치씩 분할 저장됨
+   - 종료 시까지 실패한 파일은 디스크에 그대로 남고 콘솔에 경로 출력
 4. CSV 저장은 wandb 상태와 독립적으로 동작 — 인터넷이 끊겨도 녹화는 멈추지 않습니다.
 5. wandb 오프라인 모드가 필요하면 `WANDB_MODE=offline python cmd/start.py --upload ...`
 

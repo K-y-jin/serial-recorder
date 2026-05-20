@@ -49,10 +49,10 @@ def build_parser():
                         f"File name is always log_<timestamp>.csv")
     p.add_argument("--upload", action="store_true",
                    help="stream metrics to wandb and upload CSV as artifact periodically")
-    p.add_argument("--upload-interval", type=float, default=86400.0,
-                   help="CSV upload period in seconds (default 86400 = 1 day). "
-                        "After each upload, recording rotates to a new file "
-                        "with a (2), (3), ... suffix.")
+    p.add_argument("--upload-interval", type=float, default=60.0,
+                   help="poll cadence in seconds for date-rollover check and "
+                        "pending-upload retry (default 60). Rotation itself "
+                        "is triggered on calendar date change.")
     p.add_argument("--wandb-project", default="sensor-recorder", help="wandb project name")
     p.add_argument("--wandb-entity", default=None, help="wandb entity (user/team)")
     p.add_argument("--wandb-run-name", default=None, help="wandb run name (default: auto)")
@@ -306,20 +306,14 @@ class WandbUploader:
             self._enqueue(path, final)
 
     def _loop(self):
-        # Rotation runs on its own timer, INDEPENDENT of wandb connection state.
-        # If wandb is down, rotated files queue up in _pending and are flushed
-        # whenever the connection comes back. This prevents days of recording
-        # from piling into a single CSV when wifi is offline.
+        # Rotation triggers on calendar-date change (independent of wandb state).
+        # `--upload-interval` is the poll cadence for the date check and for
+        # retrying pending uploads / init.
+        poll_s = max(1.0, self.interval)
         now = time.monotonic()
-        next_rotate = now + self.interval
         next_init_retry = now  # try immediately on first iteration if disconnected
         while not self.stop_event.is_set():
-            now = time.monotonic()
-            if self.run is None:
-                sleep = min(next_rotate - now, next_init_retry - now)
-            else:
-                sleep = next_rotate - now
-            if self.stop_event.wait(max(0.0, sleep)):
+            if self.stop_event.wait(poll_s):
                 break
 
             now = time.monotonic()
@@ -327,15 +321,15 @@ class WandbUploader:
                 self._try_init()
                 next_init_retry = now + self.INIT_RETRY_S
 
-            if now >= next_rotate:
-                next_rotate = now + self.interval
-                # Drain prior failures whenever we have a run available.
-                if self.run is not None:
-                    self._flush_pending()
-                closed_path = self.recorder.rotate()
-                if closed_path is not None:
-                    # If wandb is down, this enqueues; if up, uploads immediately.
-                    self._upload_file(closed_path, final=False)
+            # Drain prior failures whenever we have a run available.
+            if self.run is not None:
+                self._flush_pending()
+
+            # Rotate ONLY when the system date has changed.
+            closed_path = self.recorder.rotate_if_date_changed()
+            if closed_path is not None:
+                # If wandb is down, this enqueues; if up, uploads immediately.
+                self._upload_file(closed_path, final=False)
 
     def shutdown(self):
         try:
@@ -405,13 +399,19 @@ class Recorder:
                 return None
             closed = self.current_outpath
             self.logger.close()
-            new_path, new_idx = self._next_rotated_path()
-            self.rotation_idx = new_idx
+            new_path = self._next_rotated_path()
             self.logger = CsvLogger(new_path, self.args.cols, self.args.rows)
             self.logger.open()
             self.current_outpath = new_path
+            self.current_date = self._today_str()
             print(f"[rec] rotated -> {new_path}", flush=True)
             return closed
+
+    def rotate_if_date_changed(self):
+        """Rotate only when the calendar date has rolled over."""
+        if self.current_date is None or self.current_date == self._today_str():
+            return None
+        return self.rotate()
 
     def on_frame(self, ts, frame):
         self.frame_count += 1
@@ -463,6 +463,7 @@ class Recorder:
 
         self.base_outpath = outpath
         self.current_outpath = outpath
+        self.current_date = self._today_str()
         self.logger = CsvLogger(outpath, args.cols, args.rows)
         self.logger.open()
         print(f"[rec] writing to {outpath}", flush=True)

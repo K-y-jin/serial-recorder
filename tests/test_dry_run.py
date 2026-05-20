@@ -122,47 +122,72 @@ def test_dry_run_writes_csv(tmp_path):
 
 # ----------------------------- unit tests -----------------------------
 
-def test_rotation_creates_suffixed_files(tmp_path):
-    """Recorder.rotate() should close current and open '<base> (N).csv'."""
+def test_rotation_uses_date_in_filename(tmp_path):
+    """Rotated files are log_<YYYYMMDD>.csv, then (2), (3) on conflict."""
+    import time as _t
     args = make_args(tmp_path, upload=False)
     rec = Recorder(args)
 
-    # Bootstrap: open the first file manually (mirroring run() init).
+    # Bootstrap: open a first file with the original (timestamped) name.
     from sensor.csv_logger import CsvLogger
-    base = str(tmp_path / "rot_test.csv")
-    rec.base_outpath = base
-    rec.current_outpath = base
-    rec.logger = CsvLogger(base, args.cols, args.rows)
+    first = str(tmp_path / "log_20260520_120000.csv")
+    rec.base_outpath = first
+    rec.current_outpath = first
+    rec.current_date = "00000000"  # force a rotation trigger
+    rec.logger = CsvLogger(first, args.cols, args.rows)
     rec.logger.open()
 
+    today = _t.strftime("%Y%m%d")
     closed1 = rec.rotate()
-    assert closed1 == base
-    assert rec.current_outpath == str(tmp_path / "rot_test (2).csv")
+    assert closed1 == first
+    assert rec.current_outpath == str(tmp_path / f"log_{today}.csv")
     assert os.path.exists(rec.current_outpath)
 
+    # Same-day second rotation -> (2)
     closed2 = rec.rotate()
-    assert closed2 == str(tmp_path / "rot_test (2).csv")
-    assert rec.current_outpath == str(tmp_path / "rot_test (3).csv")
+    assert closed2 == str(tmp_path / f"log_{today}.csv")
+    assert rec.current_outpath == str(tmp_path / f"log_{today} (2).csv")
 
     rec.logger.close()
 
 
 def test_rotation_skips_existing_files(tmp_path):
-    """If '<base> (2).csv' already exists, rotation should skip to (3)."""
-    base = tmp_path / "skip.csv"
-    base.write_text("preexisting")
-    (tmp_path / "skip (2).csv").write_text("also preexisting")
+    """If log_<today>.csv and (2) already exist, rotation should skip to (3)."""
+    import time as _t
+    today = _t.strftime("%Y%m%d")
+    (tmp_path / f"log_{today}.csv").write_text("preexisting")
+    (tmp_path / f"log_{today} (2).csv").write_text("also preexisting")
 
     args = make_args(tmp_path, upload=False)
     rec = Recorder(args)
     from sensor.csv_logger import CsvLogger
-    rec.base_outpath = str(base)
-    rec.current_outpath = str(base)
-    rec.logger = CsvLogger(str(base), args.cols, args.rows)
+    first = str(tmp_path / "log_20260520_120000.csv")
+    rec.base_outpath = first
+    rec.current_outpath = first
+    rec.current_date = "00000000"
+    rec.logger = CsvLogger(first, args.cols, args.rows)
     rec.logger.open()
 
     rec.rotate()
-    assert rec.current_outpath == str(tmp_path / "skip (3).csv")
+    assert rec.current_outpath == str(tmp_path / f"log_{today} (3).csv")
+    rec.logger.close()
+
+
+def test_rotate_if_date_changed_noop_when_same_day(tmp_path):
+    """rotate_if_date_changed() must not rotate when the date hasn't changed."""
+    import time as _t
+    args = make_args(tmp_path, upload=False)
+    rec = Recorder(args)
+    from sensor.csv_logger import CsvLogger
+    first = str(tmp_path / "log_20260520_120000.csv")
+    rec.base_outpath = first
+    rec.current_outpath = first
+    rec.current_date = _t.strftime("%Y%m%d")
+    rec.logger = CsvLogger(first, args.cols, args.rows)
+    rec.logger.open()
+
+    assert rec.rotate_if_date_changed() is None
+    assert rec.current_outpath == first
     rec.logger.close()
 
 
@@ -191,6 +216,9 @@ def _make_uploader(tmp_path, fake_wandb, recorder, **arg_overrides):
             self_._pending_lock = threading.Lock()
             self_._init_failures = 0
             self_._log_failures = 0
+            self_._upload_failures = 0
+            self_._log_enabled = True
+            self_._offline_mode = False
             self_._thread = None
 
     up = _Stub()
@@ -267,6 +295,75 @@ def test_log_failure_is_swallowed(tmp_path):
 
     # Should not raise
     up.log_frame(time.time(), np.zeros((4, 4), dtype=np.uint8), saved_count=1)
+
+
+def test_log_pauses_after_repeated_upload_failures(tmp_path):
+    """If artifact uploads keep failing, wandb.log() should be paused
+    (RAM guard) and resumed after the next successful upload."""
+    import numpy as np
+
+    fake = FakeWandb(init_fails=0)
+    rec = _DummyRecorder(str(tmp_path / "f.csv"))
+    open(rec.current_outpath, "w").close()
+    up, _, _ = _make_uploader(tmp_path, fake, rec)
+    up._try_init()
+
+    fail_flag = {"on": True}
+    real_log = up.run.log_artifact
+    def maybe_fail(art):
+        if fail_flag["on"]:
+            raise RuntimeError("net down")
+        real_log(art)
+    up.run.log_artifact = maybe_fail
+
+    log_calls = []
+    def fake_log(payload, step=None):
+        log_calls.append(payload)
+    fake.log = fake_log  # type: ignore[attr-defined]
+
+    # Trigger LOG_DISABLE_FAILURES (=3) consecutive failures
+    for i in range(WandbUploader.LOG_DISABLE_FAILURES):
+        p = str(tmp_path / f"x{i}.csv")
+        open(p, "w").close()
+        up._upload_file(p, final=False)
+    assert up._log_enabled is False
+
+    # log_frame should now be a no-op
+    up.log_frame(time.time(), np.zeros((4, 4), dtype=np.uint8), saved_count=1)
+    assert log_calls == []
+
+    # Network restored + flush → log_enabled comes back
+    fail_flag["on"] = False
+    up._flush_pending()
+    assert up._log_enabled is True
+
+    up.log_frame(time.time(), np.zeros((4, 4), dtype=np.uint8), saved_count=2)
+    assert len(log_calls) == 1
+
+
+def test_offline_fallback_after_repeated_init_failures(tmp_path):
+    """After --wandb-offline-after attempts, init switches to mode='offline'."""
+    fake = FakeWandb(init_fails=100)
+    rec = _DummyRecorder(str(tmp_path / "f.csv"))
+    open(rec.current_outpath, "w").close()
+    up, _, _ = _make_uploader(tmp_path, fake, rec, wandb_offline_after=3)
+
+    captured_kwargs = {}
+    original_init = fake.init
+    def spy_init(**kwargs):
+        captured_kwargs.update(kwargs)
+        # Let the offline fallback succeed
+        if kwargs.get("mode") == "offline":
+            fake._init_fails_remaining = 0
+        return original_init(**kwargs)
+    fake.init = spy_init  # type: ignore[attr-defined]
+
+    # 3 failed online attempts, 4th should fall back to offline
+    for _ in range(3):
+        assert up._try_init() is False
+    assert up._try_init() is True
+    assert captured_kwargs.get("mode") == "offline"
+    assert up._offline_mode is True
 
 
 def test_shutdown_reports_undelivered_files(tmp_path, capsys):
