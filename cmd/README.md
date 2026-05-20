@@ -78,7 +78,7 @@ python cmd/start.py --interval 0
 # 해상도/헤더 변경
 python cmd/start.py --cols 64 --rows 32 --header A55A --pre 6 --post 2
 
-# wandb로 업로드 (실시간 메트릭 + 10분마다 CSV 아티팩트)
+# wandb로 업로드 (실시간 메트릭 + 날짜 변경 시 CSV 아티팩트)
 python cmd/start.py --upload --wandb-project sensor-recorder --wandb-run-name bed01
 
 # 다른 entity (팀 계정)
@@ -96,8 +96,9 @@ python cmd/start.py --dry-run --interval 0.1 --outdir dryrun_test
 # CSV 저장만 검증 (1분간 합성 프레임)
 python cmd/start.py --dry-run
 
-# wandb 업로드 흐름 점검 (3초마다 rotate + 업로드)
-python cmd/start.py --dry-run --upload --upload-interval 3
+# wandb init/upload 회복력 점검 (회전은 날짜 변경 시에만 발생)
+WANDB_BASE_URL=http://127.0.0.1:1 WANDB_API_KEY=dummy \
+  python cmd/start.py --dry-run --upload --wandb-offline-after 2
 
 # 자동 회귀 테스트
 python -m pytest tests/test_dry_run.py -v

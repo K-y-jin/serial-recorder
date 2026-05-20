@@ -5,9 +5,9 @@ Usage:
                         [--baud 921600] [--cols 32] [--rows 64]
                         [--header A55A] [--pre 6] [--post 2]
                         [--interval 1.0]
-                        [--upload] [--upload-interval 600]
+                        [--upload] [--upload-interval 60]
                         [--wandb-project NAME] [--wandb-entity NAME]
-                        [--wandb-run-name NAME]
+                        [--wandb-run-name NAME] [--wandb-offline-after 10]
                         [--dry-run] [--dry-fps 30]
 """
 import argparse
@@ -124,17 +124,20 @@ def resolve_outpath(outdir):
 
 class WandbUploader:
     """Streams scalar metrics to wandb. The Recorder owns the CSV file;
-    at each interval the Recorder rotates to a new file and hands the
-    closed file path back for artifact upload.
+    rotation is triggered by the Recorder when the calendar date changes
+    (system clock crosses midnight). On rotation, the closed file is
+    uploaded as a wandb artifact.
 
     Resilient to network drops:
       - wandb.init is retried in the background until it succeeds
       - after N failed online inits, falls back to wandb offline mode
         so log data persists to disk instead of accumulating in RAM
-      - failed artifact uploads are queued and retried each interval
+      - failed artifact uploads are queued and retried on every poll
+        (and once more at shutdown)
       - if consecutive artifact uploads fail, wandb.log() is paused to
         prevent the SDK's internal queue from growing unboundedly
-      - rotation runs on its own timer, independent of wandb state
+      - file rotation is decoupled from wandb state — recording keeps
+        producing one CSV per calendar day even when offline for days
     """
 
     INIT_RETRY_S = 30.0
