@@ -32,7 +32,7 @@ python cmd/start.py
 | `--pre`             | `6`               | 헤더 뒤 skip 바이트                                                               |
 | `--post`            | `2`               | 페이로드 뒤 skip 바이트                                                           |
 | `--interval`        | `1.0`             | 저장 주기 (초, `0` = 모든 프레임)                                                 |
-| `--outpath`         | 자동              | 저장 파일명/경로                                                                  |
+| `--outdir`          | `~/sensor_logs/`  | 저장 디렉토리 (파일명은 항상 `log_<timestamp>.csv`)                               |
 | `--upload`          | off               | wandb로 실시간 메트릭 스트리밍 + CSV 아티팩트 주기 업로드 (업로드 시 파일 rotate) |
 | `--upload-interval` | `86400`           | 업로드 주기(초, 기본 1일) — 이 주기마다 현재 CSV를 업로드하고 새 파일로 이어 쓰기 |
 | `--wandb-project`   | `sensor-recorder` | wandb 프로젝트 이름                                                               |
@@ -41,16 +41,16 @@ python cmd/start.py
 | `--dry-run`         | off               | 시리얼 대신 합성 프레임 생성 (장비 없이 CSV/wandb 동작 검증)                      |
 | `--dry-fps`         | `30`              | 합성 프레임 레이트                                                                |
 
-기본 저장 디렉토리는 **`~/sensor_logs/`** 입니다 (예: `~/sensor_logs/sensor_<timestamp>.csv`).
+기본 저장 디렉토리는 **`~/sensor_logs/`** 입니다 (예: `~/sensor_logs/log_<timestamp>.csv`).
 
-## `--outpath` 규칙
+## `--outdir` 규칙
 
-- **미지정**: `~/sensor_logs/sensor_<timestamp>.csv`
-- **파일명만**: `~/sensor_logs/<이름>.csv` (상대경로는 기본 디렉토리 기준)
+- **미지정**: `~/sensor_logs/`
+- **상대경로**: `~/sensor_logs/` 아래 하위 디렉토리로 해석 (예: `--outdir bed01` → `~/sensor_logs/bed01/`)
 - **절대경로**: 그대로 사용
-- **확장자 없음**: 자동으로 `.csv` 추가
 - **`~`**: 홈 디렉토리로 확장
-- 부모 디렉토리는 자동 생성
+- 디렉토리는 자동 생성
+- 파일명은 항상 `log_YYYYMMDD_HHMMSS.csv`. rotate 시 `log_... (2).csv`, `(3).csv`, ...
 
 ## 예시
 
@@ -61,15 +61,15 @@ python cmd/start.py
 # 포트 변경
 python cmd/start.py --port /dev/ttyUSB1
 
-# 파일명 지정 (확장자 자동)
-python cmd/start.py --outpath test_run_01
-# → ~/sensor_logs/test_run_01.csv
+# 디렉토리 지정 (하위 디렉토리는 ~/sensor_logs/ 기준)
+python cmd/start.py --outdir bed01
+# → ~/sensor_logs/bed01/log_<timestamp>.csv
 
 # 주기 500 ms
 python cmd/start.py --interval 0.5
 
 # 절대경로
-python cmd/start.py --outpath /tmp/sensor/run1.csv
+python cmd/start.py --outdir /tmp/sensor
 
 # 모든 프레임 저장 (주기 0)
 python cmd/start.py --interval 0
@@ -84,7 +84,7 @@ python cmd/start.py --upload --wandb-project sensor-recorder --wandb-run-name be
 python cmd/start.py --upload --wandb-entity myteam --wandb-project sensor
 
 # 장비 없이 합성 프레임으로 동작 점검
-python cmd/start.py --dry-run --interval 0.1 --outpath dryrun_test
+python cmd/start.py --dry-run --interval 0.1 --outdir dryrun_test
 ```
 
 ### Dry-run / 테스트
@@ -137,7 +137,7 @@ python -m pytest tests/test_dry_run.py -v
 ## 출력 예
 
 ```
-[rec] writing to /home/nrc/sensor_logs/sensor_20260414_152030.csv
+[rec] writing to /home/nrc/sensor_logs/log_20260414_152030.csv
 [cfg] port=/dev/ttyUSB0 baud=921600 cols=32 rows=64 header=A55A pre=6 post=2 interval=1.0s
 [serial] Connecting to /dev/ttyUSB0...
 [serial] Connected to /dev/ttyUSB0
@@ -146,7 +146,7 @@ python -m pytest tests/test_dry_run.py -v
 [15:20:32] saved #2  min=  2  max=192  mean= 43.01  (fps≈30)
 ...
 ^C
-[rec] stopped. saved 127 frames -> /home/nrc/sensor_logs/sensor_20260414_152030.csv
+[rec] stopped. saved 127 frames -> /home/nrc/sensor_logs/log_20260414_152030.csv
 ```
 
 - `min/max/mean`: 저장된 프레임의 셀 값 통계 — 센서 작동 확인용

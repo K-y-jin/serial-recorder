@@ -56,6 +56,9 @@ def build_parser():
     p.add_argument("--wandb-project", default="sensor-recorder", help="wandb project name")
     p.add_argument("--wandb-entity", default=None, help="wandb entity (user/team)")
     p.add_argument("--wandb-run-name", default=None, help="wandb run name (default: auto)")
+    p.add_argument("--wandb-offline-after", type=int, default=10,
+                   help="switch to wandb offline mode after N failed online init "
+                        "attempts (default 10 ≈ 5 min at 30s retries; 0 = never)")
     p.add_argument("--dry-run", action="store_true",
                    help="generate synthetic frames instead of reading the serial port "
                         "(for testing CSV writes, wandb upload, and network resilience)")
@@ -126,12 +129,16 @@ class WandbUploader:
 
     Resilient to network drops:
       - wandb.init is retried in the background until it succeeds
-      - log() failures are swallowed (wandb has its own internal retry)
+      - after N failed online inits, falls back to wandb offline mode
+        so log data persists to disk instead of accumulating in RAM
       - failed artifact uploads are queued and retried each interval
-        (and once more at shutdown)
+      - if consecutive artifact uploads fail, wandb.log() is paused to
+        prevent the SDK's internal queue from growing unboundedly
+      - rotation runs on its own timer, independent of wandb state
     """
 
     INIT_RETRY_S = 30.0
+    LOG_DISABLE_FAILURES = 3  # pause wandb.log() after N consecutive upload fails
 
     def __init__(self, args, outpath, stop_event, recorder):
         try:
@@ -161,6 +168,9 @@ class WandbUploader:
         self._pending_lock = threading.Lock()
         self._init_failures = 0
         self._log_failures = 0
+        self._upload_failures = 0  # consecutive artifact upload failures
+        self._log_enabled = True   # gates wandb.log() to protect RAM
+        self._offline_mode = False
         self._thread = threading.Thread(target=self._loop, daemon=True)
 
     def start(self):
@@ -172,15 +182,33 @@ class WandbUploader:
     def _try_init(self):
         if self.run is not None:
             return True
+        # Fall back to offline mode after too many online failures.
+        # In offline mode wandb writes everything to disk locally and never
+        # buffers in RAM, so a long offline period doesn't OOM the process.
+        threshold = self.args.wandb_offline_after
+        use_offline = (
+            threshold > 0
+            and self._init_failures >= threshold
+            and not self._offline_mode
+        )
+        kwargs = dict(
+            project=self.args.wandb_project,
+            entity=self.args.wandb_entity,
+            name=self.args.wandb_run_name,
+            config=self._wandb_config,
+            reinit=True,
+        )
+        if use_offline:
+            kwargs["mode"] = "offline"
         try:
-            self.run = self.wandb.init(
-                project=self.args.wandb_project,
-                entity=self.args.wandb_entity,
-                name=self.args.wandb_run_name,
-                config=self._wandb_config,
-                reinit=True,
-            )
-            print(f"[wandb] run: {self.run.url}", flush=True)
+            self.run = self.wandb.init(**kwargs)
+            if use_offline:
+                self._offline_mode = True
+                print(f"[wandb] online init failed {self._init_failures} times; "
+                      f"switched to OFFLINE mode. Run `wandb sync` later to "
+                      f"upload logs.", file=sys.stderr, flush=True)
+            else:
+                print(f"[wandb] run: {self.run.url}", flush=True)
             self._init_failures = 0
             return True
         except Exception as e:
@@ -194,6 +222,8 @@ class WandbUploader:
     def log_frame(self, ts, frame, saved_count):
         if self.run is None:
             return  # not connected yet; metric stream resumes after init succeeds
+        if not self._log_enabled:
+            return  # paused to keep wandb SDK's queue from growing in RAM
         try:
             self.wandb.log(
                 {
@@ -249,10 +279,25 @@ class WandbUploader:
             self.run.log_artifact(art)
             tag = "final" if final else "periodic"
             print(f"[wandb] uploaded artifact ({tag}) <- {path}", flush=True)
+            self._upload_failures = 0
+            # Resume metric streaming if it was paused (online mode only).
+            if not self._log_enabled and not self._offline_mode:
+                print("[wandb] resuming metric stream", flush=True)
+                self._log_enabled = True
             return True
         except Exception as e:
             print(f"[wandb] upload failed for {path}: {e}. Will retry.",
                   file=sys.stderr, flush=True)
+            self._upload_failures += 1
+            # In online mode, pause log() if uploads keep failing so the
+            # wandb SDK's internal queue doesn't grow unboundedly in RAM.
+            if (not self._offline_mode
+                    and self._log_enabled
+                    and self._upload_failures >= self.LOG_DISABLE_FAILURES):
+                self._log_enabled = False
+                print(f"[wandb] pausing metric stream after "
+                      f"{self._upload_failures} upload failures (RAM guard)",
+                      file=sys.stderr, flush=True)
             return False
 
     def _upload_file(self, path, final=False):
@@ -261,23 +306,36 @@ class WandbUploader:
             self._enqueue(path, final)
 
     def _loop(self):
+        # Rotation runs on its own timer, INDEPENDENT of wandb connection state.
+        # If wandb is down, rotated files queue up in _pending and are flushed
+        # whenever the connection comes back. This prevents days of recording
+        # from piling into a single CSV when wifi is offline.
+        now = time.monotonic()
+        next_rotate = now + self.interval
+        next_init_retry = now  # try immediately on first iteration if disconnected
         while not self.stop_event.is_set():
-            # If init didn't succeed yet, retry on a short cycle.
+            now = time.monotonic()
             if self.run is None:
-                if self.stop_event.wait(self.INIT_RETRY_S):
-                    break
-                self._try_init()
-                continue
-
-            if self.stop_event.wait(self.interval):
+                sleep = min(next_rotate - now, next_init_retry - now)
+            else:
+                sleep = next_rotate - now
+            if self.stop_event.wait(max(0.0, sleep)):
                 break
 
-            # Always try the pending queue first, in case prior intervals failed.
-            self._flush_pending()
+            now = time.monotonic()
+            if self.run is None and now >= next_init_retry:
+                self._try_init()
+                next_init_retry = now + self.INIT_RETRY_S
 
-            closed_path = self.recorder.rotate()
-            if closed_path is not None:
-                self._upload_file(closed_path, final=False)
+            if now >= next_rotate:
+                next_rotate = now + self.interval
+                # Drain prior failures whenever we have a run available.
+                if self.run is not None:
+                    self._flush_pending()
+                closed_path = self.recorder.rotate()
+                if closed_path is not None:
+                    # If wandb is down, this enqueues; if up, uploads immediately.
+                    self._upload_file(closed_path, final=False)
 
     def shutdown(self):
         try:
@@ -318,16 +376,26 @@ class Recorder:
         self.uploader = None
         self.base_outpath = None
         self.current_outpath = None
-        self.rotation_idx = 1
+        self.current_date = None        # YYYYMMDD of the active file
         self.lock = threading.Lock()
 
+    @staticmethod
+    def _today_str():
+        return time.strftime("%Y%m%d")
+
     def _next_rotated_path(self):
-        root, ext = os.path.splitext(self.base_outpath)
-        idx = self.rotation_idx + 1
+        """Rotated files use log_<YYYYMMDD>.csv (today's date).
+        If that name already exists, fall back to (2), (3), ..."""
+        directory = os.path.dirname(self.base_outpath) or "."
+        today = self._today_str()
+        base = os.path.join(directory, f"log_{today}.csv")
+        if not os.path.exists(base):
+            return base
+        idx = 2
         while True:
-            candidate = f"{root} ({idx}){ext}"
+            candidate = os.path.join(directory, f"log_{today} ({idx}).csv")
             if not os.path.exists(candidate):
-                return candidate, idx
+                return candidate
             idx += 1
 
     def rotate(self):
