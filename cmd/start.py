@@ -331,8 +331,30 @@ class WandbUploader:
             # Rotate ONLY when the system date has changed.
             closed_path = self.recorder.rotate_if_date_changed()
             if closed_path is not None:
-                # If wandb is down, this enqueues; if up, uploads immediately.
+                # Upload the closed (yesterday's) file to the current run...
                 self._upload_file(closed_path, final=False)
+                # ...then finish the run so a fresh run starts for the new day.
+                self._rotate_run()
+                next_init_retry = time.monotonic()  # try new init immediately
+
+    def _rotate_run(self):
+        """Called on calendar date rollover. Finalize the current wandb run
+        (if any) and reset state so a fresh run is initialized for the new
+        day. Online init is attempted again from scratch — useful when the
+        previous day was in offline/disconnected mode and wifi may now be
+        back."""
+        if self.run is not None:
+            try:
+                self.run.finish()
+            except Exception:
+                pass
+            print("[wandb] finished previous run; starting a new run for the new day",
+                  flush=True)
+        self.run = None
+        self._init_failures = 0
+        self._offline_mode = False
+        self._upload_failures = 0
+        self._log_enabled = True
 
     def shutdown(self):
         try:

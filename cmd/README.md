@@ -127,6 +127,7 @@ python -m pytest tests/test_dry_run.py -v
      - 첫 파일: `log_<YYYYMMDD_HHMMSS>.csv` (프로그램 시작 시각)
      - 이후 매일 자정: 현재 CSV close → wandb artifact 업로드 → 새 파일 `log_<YYYYMMDD>.csv` 로 이어 쓰기
      - 같은 날짜에 이미 파일이 있으면 `(2)`, `(3)` 자동 추가
+   - **하루마다 wandb run도 새로 시작**: 자정에 이전 run을 `finish()` 하고 init 상태를 리셋 → 새 날에 fresh run 시작. 이전 날이 offline/단절 상태였더라도 새 날에는 다시 online 시도부터 함
    - Ctrl+C 종료 시 현재 진행 중인 CSV를 `final` 태그로 한 번 더 업로드 후 `run.finish()`
 3. **네트워크 회복력 (wifi 단절 대응)**:
    - `wandb.init` 실패 시 백그라운드에서 30초 간격으로 자동 재시도

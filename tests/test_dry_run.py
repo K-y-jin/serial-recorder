@@ -366,6 +366,57 @@ def test_offline_fallback_after_repeated_init_failures(tmp_path):
     assert up._offline_mode is True
 
 
+def test_rotate_run_finishes_and_resets(tmp_path):
+    """_rotate_run() must finish the current run and reset state so a fresh
+    wandb run is initialized on the next attempt (new day -> new run)."""
+    fake = FakeWandb(init_fails=0)
+    rec = _DummyRecorder(str(tmp_path / "f.csv"))
+    open(rec.current_outpath, "w").close()
+    up, _, _ = _make_uploader(tmp_path, fake, rec)
+
+    # Day 1: connect online and exercise the resilience state.
+    up._try_init()
+    day1_run = up.run
+    assert day1_run is not None
+    up._upload_failures = 5  # pretend things went wrong yesterday
+    up._log_enabled = False
+    up._offline_mode = True
+
+    # Midnight rollover.
+    up._rotate_run()
+    assert day1_run.finished is True
+    assert up.run is None
+    assert up._init_failures == 0
+    assert up._offline_mode is False
+    assert up._upload_failures == 0
+    assert up._log_enabled is True
+
+    # Day 2: a brand-new run is created.
+    up._try_init()
+    day2_run = up.run
+    assert day2_run is not None
+    assert day2_run is not day1_run
+
+
+def test_rotate_run_no_op_when_never_connected(tmp_path):
+    """If wandb never connected, _rotate_run() just resets the retry counters
+    (no run.finish call to fail on)."""
+    fake = FakeWandb(init_fails=100)
+    rec = _DummyRecorder(str(tmp_path / "f.csv"))
+    open(rec.current_outpath, "w").close()
+    up, _, _ = _make_uploader(tmp_path, fake, rec, wandb_offline_after=999)
+
+    # Several failed online inits accumulate.
+    for _ in range(5):
+        up._try_init()
+    assert up._init_failures == 5
+    assert up.run is None
+
+    up._rotate_run()
+    assert up._init_failures == 0  # ready to retry online from scratch
+    assert up.run is None
+
+
 def test_shutdown_reports_undelivered_files(tmp_path, capsys):
     """If files are still pending at shutdown, their paths are printed."""
     fake = FakeWandb(init_fails=0)
