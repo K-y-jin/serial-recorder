@@ -1,5 +1,8 @@
 pyserial
 numpy
 matplotlib
+requests
 # Optional: only needed for `python cmd/start.py --upload`
 # wandb
+# Optional: only needed for `python -m client.mock_server.server`
+# see client/mock_server/requirements.txt

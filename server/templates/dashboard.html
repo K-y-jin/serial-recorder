@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Pressure Risk Dashboard</title>
+<style>
+  body {
+    background: #14161a;
+    color: #e6e6e6;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 16px; }
+  #status {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  #status.ok { background: #1f3a2a; color: #6fd18a; }
+  #status.warn { background: #3a1f1f; color: #ff8080; }
+  #meta { font-size: 13px; color: #a0a4ab; margin-bottom: 16px; line-height: 1.6; }
+  canvas { border: 1px solid #333; image-rendering: pixelated; background: #0a0b0d; }
+  #legend { margin-top: 12px; font-size: 12px; color: #a0a4ab; }
+  #legend span { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+</style>
+</head>
+<body>
+  <h1>Pressure Risk Dashboard</h1>
+  <div id="status" class="ok">대기 중</div>
+  <div id="meta">이벤트 없음</div>
+  <canvas id="grid"></canvas>
+  <div id="legend">
+    <span style="background:#3a3f4a"></span>압력 감지 (실루엣)
+    <span style="background:#ff3b3b; margin-left:16px"></span>위험 셀 (risky_idx)
+  </div>
+
+<script>
+const POLL_MS = 1500;
+const canvas = document.getElementById('grid');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const metaEl = document.getElementById('meta');
+
+const CELL = 2.5; // px per grid cell, square (1/4 of the original 10px)
+
+// The grid is drawn rotated 90° counter-clockwise from its raw (row, col)
+// layout: fill/render calls below use the raw coordinate space, and a
+// canvas transform (translate + rotate(-90deg)) maps that space onto the
+// visible (swapped-dimension) canvas.
+function drawGrid(data) {
+  const cols = data.cols, rows = data.rows;
+  const rawW = cols * CELL, rawH = rows * CELL;
+
+  // CCW 90 rotation swaps displayed width/height relative to the raw grid.
+  if (canvas.width !== rawH || canvas.height !== rawW) {
+    canvas.width = rawH;
+    canvas.height = rawW;
+  }
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.translate(0, canvas.height);
+  ctx.rotate(-Math.PI / 2);
+
+  const state = data.latest_state;
+  if (state && state.pressure && state.pressure.length === cols * rows) {
+    for (let i = 0; i < state.pressure.length; i++) {
+      const v = state.pressure[i];
+      const row = Math.floor(i / cols), col = i % cols;
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
+    }
+  } else if (data.latest_event) {
+    ctx.fillStyle = '#3a3f4a';
+    for (const [row, col] of data.latest_event.pressure_mask_cells) {
+      ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
+    }
+  }
+
+  if (data.latest_event) {
+    ctx.fillStyle = '#ff3b3b';
+    for (const [row, col] of data.latest_event.risky_cells) {
+      ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
+    }
+  }
+}
+
+function updateStatus(data) {
+  if (data.has_warning) {
+    statusEl.className = 'warn';
+    statusEl.textContent = '위험 경고';
+    const ev = data.latest_event;
+    const receivedAt = new Date(ev.received_at * 1000).toLocaleTimeString('ko-KR');
+    metaEl.textContent =
+      `accumulated_time=${ev.accumulated_time}  |  위험 셀 ${ev.risky_cells.length}개  |  수신 ${receivedAt}`;
+  } else {
+    statusEl.className = 'ok';
+    statusEl.textContent = '정상';
+    metaEl.textContent = '이벤트 없음';
+  }
+}
+
+async function poll() {
+  try {
+    const resp = await fetch('/api/latest');
+    const data = await resp.json();
+    drawGrid(data);
+    updateStatus(data);
+  } catch (e) {
+    statusEl.className = 'warn';
+    statusEl.textContent = '서버 연결 실패';
+  }
+}
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
