@@ -1,6 +1,7 @@
 pyserial
 numpy
 matplotlib
+Pillow
 requests
 # Optional: only needed for `python cmd/start.py --upload`
 # wandb

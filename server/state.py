@@ -33,6 +33,9 @@ class ServerState:
         self.event_history = deque(maxlen=EVENT_HISTORY_MAXLEN)
         self.latest_state = None
         self.state_reports = []
+        self.latest_image = None
+        self.last_seen = None
+        self.connected = None  # None = unknown (no contact yet)
 
     def get_config(self):
         with self._lock:
@@ -67,6 +70,37 @@ class ServerState:
             self.state_reports.append(dict(payload))
         return self.latest_state
 
+    def record_image(self, image_bytes):
+        with self._lock:
+            self.latest_image = image_bytes
+
+    def get_latest_image(self):
+        with self._lock:
+            return self.latest_image
+
+    def touch(self):
+        """Records that the client just contacted the server (GET /config,
+        GET /command, POST /event/state/image) -- the connection heartbeat."""
+        with self._lock:
+            self.last_seen = self._clock()
+
+    def get_last_seen(self):
+        with self._lock:
+            return self.last_seen
+
+    def set_connected(self, connected):
+        """Updates the connected flag; returns True iff this is a real
+        transition (not the first-ever observation), so callers can alert
+        exactly once per disconnect instead of on every check."""
+        with self._lock:
+            changed = self.connected is not None and self.connected != connected
+            self.connected = connected
+            return changed
+
+    def is_connected(self):
+        with self._lock:
+            return self.connected
+
     def snapshot(self):
         """Everything the dashboard's /api/latest needs, in one locked read."""
         with self._lock:
@@ -75,4 +109,7 @@ class ServerState:
                 "rows": self.config["rows"],
                 "latest_event": dict(self.latest_event) if self.latest_event else None,
                 "latest_state": dict(self.latest_state) if self.latest_state else None,
+                "has_image": self.latest_image is not None,
+                "connected": self.connected,
+                "last_seen": self.last_seen,
             }

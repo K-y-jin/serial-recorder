@@ -4,7 +4,7 @@ critical_time), which are refreshed by periodic polling."""
 import threading
 from dataclasses import dataclass
 
-DEFAULT_CALIBRATION_FACTOR = 0.5
+DEFAULT_CALIBRATION_FACTOR = 0.4755
 DEFAULT_CRITICAL_PRESSURE = 32.0  # mmHg
 DEFAULT_CRITICAL_TIME = 90.0  # minutes
 DEFAULT_PRESSURE_MASK_THRESHOLD = 10  # fixed, not server-configurable
@@ -23,6 +23,7 @@ class ClientConfig:
     server_base_url: str = "http://localhost:5000"
     config_path: str = "/config"
     event_path: str = "/event"
+    image_path: str = "/image"
     command_path: str = "/command"
     state_path: str = "/state"
     poll_interval_s: float = 60.0
@@ -32,6 +33,7 @@ class ClientConfig:
     alert_cooldown_s: float = 300.0
     pressure_mask_threshold: int = DEFAULT_PRESSURE_MASK_THRESHOLD
     event_queue_maxsize: int = 64
+    warning_log_dir: str = "logs/client_warnings"
 
 
 class RuntimeConfig:

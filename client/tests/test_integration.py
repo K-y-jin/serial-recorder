@@ -38,7 +38,7 @@ def mock_server():
     yield app, base_url
 
 
-def _make_client_app(base_url, **overrides):
+def _make_client_app(base_url, tmp_path, **overrides):
     argv = [
         "--dry-run", "--dry-fps", "30",
         "--cols", "4", "--rows", "4",
@@ -46,6 +46,7 @@ def _make_client_app(base_url, **overrides):
         "--poll-interval", "0.2",
         "--command-poll-interval", "0.1",
         "--alert-cooldown", "0.1",
+        "--warning-log-dir", str(tmp_path / "client_warnings"),
     ]
     for k, v in overrides.items():
         argv += [f"--{k.replace('_', '-')}", str(v)]
@@ -69,9 +70,9 @@ def _stop_all(client_app):
     client_app.state_sender.stop()
 
 
-def test_dry_run_client_reports_event_to_mock_server(mock_server):
+def test_dry_run_client_reports_event_to_mock_server(mock_server, tmp_path):
     app, base_url = mock_server
-    client_app = _make_client_app(base_url)
+    client_app = _make_client_app(base_url, tmp_path)
     _start_all(client_app)
     try:
         deadline = time.time() + 5.0
@@ -88,9 +89,9 @@ def test_dry_run_client_reports_event_to_mock_server(mock_server):
     assert "pressure_mask_idx" in ev
 
 
-def test_pause_command_stops_events_and_reset_command_resumes(mock_server):
+def test_pause_command_stops_events_and_reset_command_resumes(mock_server, tmp_path):
     app, base_url = mock_server
-    client_app = _make_client_app(base_url)
+    client_app = _make_client_app(base_url, tmp_path)
     _start_all(client_app)
     try:
         requests.put(base_url + "/command", json={"command": "pause"}, timeout=1.0)
@@ -115,9 +116,9 @@ def test_pause_command_stops_events_and_reset_command_resumes(mock_server):
     assert client_app.monitor.state == "running"
 
 
-def test_state_command_triggers_state_report(mock_server):
+def test_state_command_triggers_state_report(mock_server, tmp_path):
     app, base_url = mock_server
-    client_app = _make_client_app(base_url)
+    client_app = _make_client_app(base_url, tmp_path)
     _start_all(client_app)
     try:
         # Let at least one frame arrive so latest_frame is populated.

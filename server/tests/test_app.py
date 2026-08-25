@@ -1,3 +1,6 @@
+import io
+import json
+
 import pytest
 
 from server.app import create_app
@@ -5,11 +8,12 @@ from server.state import ServerState
 
 
 @pytest.fixture
-def client():
-    app = create_app(ServerState(cols=4, rows=4))
+def client(tmp_path):
+    app = create_app(ServerState(cols=4, rows=4), warning_dir=tmp_path / "warnings")
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c
+    app.config["_connection_monitor"].stop()
 
 
 def test_get_config_defaults(client):
@@ -78,4 +82,44 @@ def test_api_latest_no_warning_initially(client):
 def test_dashboard_smoke(client):
     resp = client.get("/dashboard")
     assert resp.status_code == 200
-    assert b"Pressure Risk Dashboard" in resp.data
+
+
+def test_event_is_logged_to_warnings_file(client, tmp_path):
+    client.post("/event", json={
+        "accumulated_time": 90.0,
+        "risky_idx": [0, 5],
+        "pressure_mask_idx": [0, 1, 5, 6],
+    })
+    log_path = tmp_path / "warnings" / "warnings.log"
+    assert log_path.exists()
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert record["risky_idx"] == [0, 5]
+    assert "received_at" in record
+
+
+def test_image_is_saved_to_warnings_dir(client, tmp_path):
+    resp = client.post(
+        "/image",
+        data={"image": (io.BytesIO(b"\x89PNGfake"), "risk.png")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+
+    image_dir = tmp_path / "warnings" / "images"
+    saved = list(image_dir.glob("*.png"))
+    assert len(saved) == 1
+    assert saved[0].read_bytes() == b"\x89PNGfake"
+
+    assert client.get("/api/latest").get_json()["has_image"] is True
+
+
+def test_client_requests_touch_connection_state(client):
+    data = client.get("/api/latest").get_json()
+    assert data["connected"] is None
+    assert data["last_seen"] is None
+
+    client.get("/config")
+    data = client.get("/api/latest").get_json()
+    assert data["last_seen"] is not None

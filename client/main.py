@@ -3,9 +3,16 @@
 Reads pressure frames over serial (same protocol as sensor recorder),
 accumulates per-cell risk over real elapsed time, and reports cells that
 stay risky past `critical_time` to a server, subject to a per-cell alert
-cooldown. The three risk thresholds (calibration_factor, critical_pressure,
+cooldown. Each warning is accompanied by a PNG of the current frame (not
+an accumulated one) with the risky cells overlaid, POSTed to /image. The
+three risk thresholds (calibration_factor, critical_pressure,
 critical_time) are polled periodically from the server, as are pending
 monitor commands (start/pause/stop/reset/state).
+
+Every warning is also persisted locally regardless of server
+reachability (see client/warning_log.py): the warning payload and a copy
+of the sent image go to <warning-log-dir>, and every event/state/image
+send attempt's success/failure is logged to send.log.
 
 Usage:
     python -m client.main [--port /dev/ttyUSB0] [--baud 921600]
@@ -14,6 +21,7 @@ Usage:
                            [--server-url http://localhost:5000]
                            [--poll-interval 60] [--command-poll-interval 2]
                            [--http-timeout 5] [--alert-cooldown 300]
+                           [--warning-log-dir logs/client_warnings]
                            [--dry-run] [--dry-fps 30]
 """
 import argparse
@@ -33,9 +41,13 @@ from sensor.frame_parser import FrameParser  # noqa: E402
 from sensor.serial_reader import SerialReader  # noqa: E402
 
 from client.config import ClientConfig, RuntimeConfig  # noqa: E402
-from client.http_client import CommandPoller, ConfigPoller, EventSender, StateSender  # noqa: E402
+from client.http_client import (  # noqa: E402
+    CommandPoller, ConfigPoller, EventSender, ImageSender, StateSender,
+)
+from client.image import render_risk_image  # noqa: E402
 from client.monitor import MonitorState  # noqa: E402
 from client.risk import RiskAccumulator  # noqa: E402
+from client.warning_log import WarningLog  # noqa: E402
 
 DEFAULT_PORT = "/dev/ttyUSB0"
 
@@ -52,6 +64,9 @@ def build_parser():
     p.add_argument("--server-url", default=ClientConfig.server_base_url)
     p.add_argument("--config-path", default=ClientConfig.config_path)
     p.add_argument("--event-path", default=ClientConfig.event_path)
+    p.add_argument("--image-path", default=ClientConfig.image_path)
+    p.add_argument("--warning-log-dir", default=ClientConfig.warning_log_dir,
+                    help="directory to log warnings.log, send.log, and images/ into")
     p.add_argument("--command-path", default=ClientConfig.command_path)
     p.add_argument("--state-path", default=ClientConfig.state_path)
     p.add_argument("--poll-interval", type=float, default=ClientConfig.poll_interval_s)
@@ -134,6 +149,7 @@ class ClientApp:
         n_cells = args.cols * args.rows
 
         self.runtime_config = RuntimeConfig()
+        self.warning_log = WarningLog(args.warning_log_dir)
         self.risk_acc = RiskAccumulator(n_cells, alert_cooldown_s=args.alert_cooldown)
         self.monitor = MonitorState(self.risk_acc)
         self.latest_frame = LatestFrame()
@@ -149,6 +165,10 @@ class ClientApp:
         self.sender = EventSender(
             args.server_url, args.event_path, timeout_s=args.http_timeout,
             retry_delay_s=args.http_retry_delay, on_status=self.on_send_status,
+        )
+        self.image_sender = ImageSender(
+            args.server_url, args.image_path, timeout_s=args.http_timeout,
+            retry_delay_s=args.http_retry_delay, on_status=self.on_image_send_status,
         )
         self.state_sender = StateSender(
             args.server_url, args.state_path, timeout_s=args.http_timeout,
@@ -177,11 +197,20 @@ class ClientApp:
         pressure_mask_idx = np.nonzero(
             pressure_vector > self.args.pressure_mask_threshold
         )[0]
-        self.sender.enqueue({
+        event_payload = {
             "accumulated_time": crit_t,
             "risky_idx": fired_idx.tolist(),
             "pressure_mask_idx": pressure_mask_idx.tolist(),
-        })
+        }
+        # Logged immediately, independent of whether the send below
+        # succeeds or the server is even reachable.
+        self.warning_log.log_warning(event_payload)
+        self.sender.enqueue(event_payload)
+
+        # Current frame + risk-point overlay, not an accumulated image.
+        image_bytes = render_risk_image(pressure_vector, self.args.rows, self.args.cols, fired_idx)
+        self.warning_log.save_image(image_bytes, ts)
+        self.image_sender.enqueue({"image": image_bytes, "timestamp": ts})
 
     def on_command(self, command):
         if command == "state":
@@ -209,9 +238,15 @@ class ClientApp:
 
     def on_send_status(self, ok, msg):
         print(f"[event] {msg}", flush=True)
+        self.warning_log.log_send("event", ok, msg)
 
     def on_state_send_status(self, ok, msg):
         print(f"[state] {msg}", flush=True)
+        self.warning_log.log_send("state", ok, msg)
+
+    def on_image_send_status(self, ok, msg):
+        print(f"[image] {msg}", flush=True)
+        self.warning_log.log_send("image", ok, msg)
 
     def run(self):
         def handle_sig(signum, frame):
@@ -224,6 +259,7 @@ class ClientApp:
         self.command_poller.start()
         self.sender.start()
         self.state_sender.start()
+        self.image_sender.start()
         print("[client] running... press Ctrl+C to stop", flush=True)
         try:
             while not self.stop_event.is_set():
@@ -234,6 +270,7 @@ class ClientApp:
             self.command_poller.stop()
             self.sender.stop()
             self.state_sender.stop()
+            self.image_sender.stop()
             print("[client] stopped", flush=True)
 
 

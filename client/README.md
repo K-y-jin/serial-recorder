@@ -15,6 +15,27 @@
 - 어떤 셀의 `accumulated_risk`가 `critical_time`(분)에 도달하면 `POST /event`로
   보고. 같은 셀이 계속 risky 상태를 유지하면 최초 알림 이후 `--alert-cooldown`
   (기본 5분) 간격으로만 재전송
+- `/event`와 함께 `POST /image`로 위험 경고 스냅샷 PNG도 전송. **누적된 이미지가
+  아니라 그 순간의 현재 프레임 + risky 셀 표시(빨간색) overlay** 한 장
+  (`client/image.py:render_risk_image()`, multipart 필드명 `image`)
+
+## 로컬 기록 (파일 저장)
+
+`client/warning_log.py:WarningLog`가 서버 연결 여부와 무관하게 아래를
+`<warning-log-dir>`(기본 `logs/client_warnings/`)에 남긴다:
+
+- `warnings.log` — risk 누적으로 경고가 발생한 순간 즉시(전송 성공/실패와
+  무관하게) JSON 한 줄씩 append
+- `images/<timestamp>.png` — 서버로 전송하는 위험 경고 스냅샷의 로컬 사본
+- `send.log` — `POST /event`, `/state`, `/image` 각 전송 시도의 성공/실패
+  결과를 JSON 한 줄씩 append (`{"kind", "ok", "message", "logged_at"}`)
+
+`--warning-log-dir`로 경로 변경 가능:
+
+```bash
+python -m client.main --dry-run --server-url http://localhost:5000 \
+    --warning-log-dir /var/log/bliss/client_warnings
+```
 
 ## 서버 명령 (start / pause / stop / reset / state)
 
@@ -88,7 +109,7 @@ After=network-online.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/bliss_recorder
-ExecStart=/usr/bin/python3 -m client.main --port /dev/ttyUSB0 --server-url http://SERVER_HOST:8000
+ExecStart=/usr/bin/python3 -m client.main --port /dev/ttyUSB0 --server-url http://SERVER_HOST:5000
 Restart=on-failure
 RestartSec=5
 

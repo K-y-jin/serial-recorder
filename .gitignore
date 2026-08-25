@@ -20,6 +20,13 @@ dist/
 !sensor_logs/*.csv
 !sensor_logs/**/*.csv
 
+# start_client.sh / stop_client.sh runtime files
+/run/
+/logs/
+
+# server/app.py persisted risk-warning logs + snapshot images
+/warnings/
+
 # IDE / OS
 .vscode/
 .idea/

@@ -123,6 +123,7 @@ class _QueuedPoster:
     """
 
     MAX_ATTEMPTS = 3
+    QUEUE_FULL_MSG = "event queue full; dropped oldest pending event"
 
     def __init__(self, url, timeout_s=5.0, retry_delay_s=5.0,
                  maxsize=64, on_status=None, session=None):
@@ -158,7 +159,7 @@ class _QueuedPoster:
                 self._queue.put_nowait(payload)
             except queue.Full:
                 pass
-            self.on_status(False, "event queue full; dropped oldest pending event")
+            self.on_status(False, self.QUEUE_FULL_MSG)
 
     def _send(self, payload):
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
@@ -203,3 +204,37 @@ class StateSender(_QueuedPoster):
         super().__init__(base_url.rstrip("/") + state_path, timeout_s=timeout_s,
                           retry_delay_s=retry_delay_s, maxsize=maxsize,
                           on_status=on_status, session=session)
+
+
+class ImageSender(_QueuedPoster):
+    """POSTs a risk-warning snapshot PNG (multipart/form-data, field name
+    "image") whenever a risk warning fires. A small queue is enough --
+    images are large and only the most recent unsent one is worth keeping."""
+
+    QUEUE_FULL_MSG = "image queue full; dropped oldest pending image"
+
+    def __init__(self, base_url, image_path, timeout_s=5.0, retry_delay_s=5.0,
+                 maxsize=4, on_status=None, session=None):
+        super().__init__(base_url.rstrip("/") + image_path, timeout_s=timeout_s,
+                          retry_delay_s=retry_delay_s, maxsize=maxsize,
+                          on_status=on_status, session=session)
+
+    def _send(self, payload):
+        image_bytes = payload["image"]
+        fields = {k: str(v) for k, v in payload.items() if k != "image"}
+        files = {"image": ("risk.png", image_bytes, "image/png")}
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            try:
+                resp = self.session.post(
+                    self.url, data=fields, files=files, timeout=self.timeout_s
+                )
+                resp.raise_for_status()
+                self.on_status(True, f"image sent ({len(image_bytes)} bytes)")
+                return
+            except Exception as e:
+                if attempt >= self.MAX_ATTEMPTS:
+                    self.on_status(False, f"image send failed, dropping: {e}")
+                    return
+                self.on_status(False, f"image send failed (attempt {attempt}): {e}")
+                if self._stop.wait(self.retry_delay_s):
+                    return

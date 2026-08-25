@@ -22,8 +22,21 @@
   }
   #status.ok { background: #1f3a2a; color: #6fd18a; }
   #status.warn { background: #3a1f1f; color: #ff8080; }
+  #connStatus {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    margin-left: 8px;
+  }
+  #connStatus.ok { background: #1f3a2a; color: #6fd18a; }
+  #connStatus.warn { background: #3a1f1f; color: #ff8080; }
+  #connStatus.unknown { background: #2a2c30; color: #a0a4ab; }
   #meta { font-size: 13px; color: #a0a4ab; margin-bottom: 16px; line-height: 1.6; }
   canvas { border: 1px solid #333; image-rendering: pixelated; background: #0a0b0d; }
+  #riskImage { display: none; margin-top: 16px; max-width: 100%; border: 1px solid #333; }
   #legend { margin-top: 12px; font-size: 12px; color: #a0a4ab; }
   #legend span { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
 </style>
@@ -31,19 +44,25 @@
 <body>
   <h1>Pressure Risk Dashboard</h1>
   <div id="status" class="ok">대기 중</div>
+  <div id="connStatus" class="unknown">클라이언트 상태 확인 중</div>
   <div id="meta">이벤트 없음</div>
   <canvas id="grid"></canvas>
   <div id="legend">
     <span style="background:#3a3f4a"></span>압력 감지 (실루엣)
     <span style="background:#ff3b3b; margin-left:16px"></span>위험 셀 (risky_idx)
   </div>
+  <img id="riskImage" alt="위험 경고 스냅샷">
+  <div id="imageMeta" style="display:none; font-size:12px; color:#a0a4ab; margin-top:4px;">위험 경고 스냅샷 (현재 프레임 + risk point overlay)</div>
 
 <script>
 const POLL_MS = 1500;
 const canvas = document.getElementById('grid');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
+const connStatusEl = document.getElementById('connStatus');
 const metaEl = document.getElementById('meta');
+const riskImageEl = document.getElementById('riskImage');
+const imageMetaEl = document.getElementById('imageMeta');
 
 const CELL = 2.5; // px per grid cell, square (1/4 of the original 10px)
 
@@ -104,15 +123,44 @@ function updateStatus(data) {
   }
 }
 
+function updateConnStatus(data) {
+  if (data.connected === true) {
+    connStatusEl.className = 'ok';
+    connStatusEl.textContent = '클라이언트 연결됨';
+  } else if (data.connected === false) {
+    connStatusEl.className = 'warn';
+    const since = data.last_seen ? new Date(data.last_seen * 1000).toLocaleTimeString('ko-KR') : '?';
+    connStatusEl.textContent = `클라이언트 연결 끊김 (마지막 수신 ${since})`;
+  } else {
+    connStatusEl.className = 'unknown';
+    connStatusEl.textContent = '클라이언트 상태 확인 중';
+  }
+}
+
+function updateImage(data) {
+  if (data.has_image) {
+    riskImageEl.src = '/image/latest?t=' + Date.now();
+    riskImageEl.style.display = 'block';
+    imageMetaEl.style.display = 'block';
+  } else {
+    riskImageEl.style.display = 'none';
+    imageMetaEl.style.display = 'none';
+  }
+}
+
 async function poll() {
   try {
     const resp = await fetch('/api/latest');
     const data = await resp.json();
     drawGrid(data);
     updateStatus(data);
+    updateConnStatus(data);
+    updateImage(data);
   } catch (e) {
     statusEl.className = 'warn';
     statusEl.textContent = '서버 연결 실패';
+    connStatusEl.className = 'unknown';
+    connStatusEl.textContent = '클라이언트 상태 확인 중';
   }
 }
 
