@@ -27,6 +27,9 @@ dist/
 # server/app.py persisted risk-warning logs + snapshot images
 /warnings/
 
+# Local env config (SERVER_IP, etc.)
+.env
+
 # IDE / OS
 .vscode/
 .idea/

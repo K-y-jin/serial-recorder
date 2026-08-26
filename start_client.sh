@@ -14,6 +14,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+fi
+SERVER_IP="${SERVER_IP:-localhost}"
+
 RUN_DIR="$SCRIPT_DIR/run"
 LOG_DIR="$SCRIPT_DIR/logs"
 PID_FILE="$RUN_DIR/client.pid"
@@ -28,7 +36,7 @@ fi
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
-nohup "$PYTHON_BIN" -m client.main "$@" >> "$LOG_FILE" 2>&1 &
+nohup "$PYTHON_BIN" -m client.main --server-url "http://${SERVER_IP}:5000" "$@" >> "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
 disown
 
