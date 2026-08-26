@@ -24,6 +24,7 @@ dist/
 # start_client.sh / stop_client.sh runtime files
 /run/
 /logs/
+/nrc/
 
 # server/app.py persisted risk-warning logs + snapshot images
 /warnings/
