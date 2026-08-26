@@ -42,7 +42,15 @@ class ConnectionMonitor:
         if last_seen is None:
             return  # client has never contacted us -- nothing to judge yet
         connected = (self._clock() - last_seen) <= self.timeout_s
-        if self.state.set_connected(connected):
+        was_connected = self.state.is_connected()
+        changed = self.state.set_connected(connected)
+        if was_connected is None:
+            # First-ever observation: worth logging (client connect time),
+            # but not alert-worthy -- there was no prior state to alert
+            # about a change from.
+            logger.info("client %s (first contact)", "connected" if connected else "not connected")
+            return
+        if changed:
             if connected:
                 logger.info("client connection restored")
                 fire_alert("클라이언트 연결이 복구되었습니다.")

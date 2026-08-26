@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import threading
+from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class WarningStore:
         """Appends one JSON line for a client risk warning (POST /event)."""
         record = dict(payload)
         record["received_at"] = received_at
+        record["server_time"] = datetime.now().astimezone().isoformat()
         line = json.dumps(record, ensure_ascii=False)
         with self._lock:
             with open(self.log_path, "a", encoding="utf-8") as f:
@@ -100,40 +102,64 @@ class WarningStore:
 
     def clear_mock_events(self):
         """Removes all mock-warning records (is_mock=True) from
-        warnings.log, keeping real client warnings intact. Returns the
-        number of records removed."""
+        warnings.log, plus their saved snapshot images (see save_image's
+        "mock_" filename prefix), keeping real client warnings/images
+        intact. Returns the number of log records removed."""
         with self._lock:
             if not self.log_path.exists():
-                return 0
-            with open(self.log_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-            kept_lines = []
-            removed = 0
-            for line in lines:
-                stripped = line.strip()
-                if not stripped:
-                    kept_lines.append(line)
-                    continue
-                try:
-                    record = json.loads(stripped)
-                except ValueError:
-                    kept_lines.append(line)
-                    continue
-                if record.get("is_mock"):
-                    removed += 1
-                else:
-                    kept_lines.append(line)
-            if removed:
-                with open(self.log_path, "w", encoding="utf-8") as f:
-                    f.writelines(kept_lines)
+                removed = 0
+            else:
+                with open(self.log_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                kept_lines = []
+                removed = 0
+                for line in lines:
+                    stripped = line.strip()
+                    if not stripped:
+                        kept_lines.append(line)
+                        continue
+                    try:
+                        record = json.loads(stripped)
+                    except ValueError:
+                        kept_lines.append(line)
+                        continue
+                    if record.get("is_mock"):
+                        removed += 1
+                    else:
+                        kept_lines.append(line)
+                if removed:
+                    with open(self.log_path, "w", encoding="utf-8") as f:
+                        f.writelines(kept_lines)
+            for path in self.image_dir.glob("mock_*.png"):
+                path.unlink()
+            for path in self.image_dir.glob("mock_*.json"):
+                path.unlink()
         return removed
 
-    def save_image(self, image_bytes, received_at):
-        """Saves a warning snapshot PNG (POST /image), named by its
-        received timestamp so it can be matched up with warnings.log."""
-        filename = f"{received_at:.6f}.png"
+    def save_image(self, image_bytes, received_at, is_mock=False, is_status=False):
+        """Saves a warning snapshot PNG (POST /image, a mock warning's
+        generated snapshot, or a STATUS-requested frame), named by its
+        received timestamp so it can be matched up with warnings.log. Mock
+        snapshots get a "mock_" prefix so clear_mock_events can find and
+        remove them; STATUS-requested frames (not tied to a risk warning)
+        get a "status_" prefix."""
+        prefix = "mock_" if is_mock else ("status_" if is_status else "")
+        filename = f"{prefix}{received_at:.6f}.png"
         path = self.image_dir / filename
         with open(path, "wb") as f:
             f.write(image_bytes)
         logger.info("warning image saved -> %s", path)
+        return str(path)
+
+    def save_status(self, pressure, cols, rows, received_at, is_mock=False, is_status=False):
+        """Saves the raw 0-255 pressure grid (STATUS data) behind a
+        warning snapshot, alongside its image (same received_at, same
+        prefix convention), so the frame that produced the image can be
+        inspected/reconstructed later."""
+        prefix = "mock_" if is_mock else ("status_" if is_status else "")
+        filename = f"{prefix}{received_at:.6f}.json"
+        path = self.image_dir / filename
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"cols": cols, "rows": rows, "pressure": list(pressure)}, f)
+        logger.info("warning status saved -> %s", path)
         return str(path)

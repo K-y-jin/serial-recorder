@@ -114,6 +114,10 @@ def test_mock_warning_is_tagged_and_clearable(client, tmp_path):
     assert records[0].get("is_mock") is not True
     assert records[1]["is_mock"] is True
 
+    image_dir = tmp_path / "warnings" / "images"
+    mock_images = list(image_dir.glob("mock_*.png"))
+    assert len(mock_images) == 1
+
     resp = client.post("/api/mock-warning/clear")
     assert resp.status_code == 200
     assert resp.get_json()["removed"] == 1
@@ -121,6 +125,18 @@ def test_mock_warning_is_tagged_and_clearable(client, tmp_path):
     lines = log_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0]).get("is_mock") is not True
+    assert list(image_dir.glob("mock_*.png")) == []
+
+    latest_event = client.get("/api/latest").get_json()["latest_event"]
+    assert latest_event["risky_idx"] == [0, 5]
+
+
+def test_clearing_mock_warning_drops_latest_event_when_no_real_event(client):
+    client.post("/api/mock-warning")
+    assert client.get("/api/latest").get_json()["latest_event"] is not None
+
+    client.post("/api/mock-warning/clear")
+    assert client.get("/api/latest").get_json()["latest_event"] is None
 
 
 def test_image_is_saved_to_warnings_dir(client, tmp_path):
@@ -137,6 +153,50 @@ def test_image_is_saved_to_warnings_dir(client, tmp_path):
     assert saved[0].read_bytes() == b"\x89PNGfake"
 
     assert client.get("/api/latest").get_json()["has_image"] is True
+
+
+def test_image_status_saved_when_state_known(client, tmp_path):
+    client.post("/state", json={"timestamp": 1.0, "pressure": [1, 2, 3, 4]})
+    client.post(
+        "/image",
+        data={"image": (io.BytesIO(b"\x89PNGfake"), "risk.png")},
+        content_type="multipart/form-data",
+    )
+
+    image_dir = tmp_path / "warnings" / "images"
+    statuses = list(image_dir.glob("*.json"))
+    assert len(statuses) == 1
+    status = json.loads(statuses[0].read_text(encoding="utf-8"))
+    assert status["pressure"] == [1, 2, 3, 4]
+    assert status["cols"] == 4
+    assert status["rows"] == 4
+
+
+def test_state_request_saves_status_image(client, tmp_path):
+    client.post("/state", json={"timestamp": 1.0, "pressure": [0] * 16})
+
+    image_dir = tmp_path / "warnings" / "images"
+    pngs = list(image_dir.glob("status_*.png"))
+    jsons = list(image_dir.glob("status_*.json"))
+    assert len(pngs) == 1
+    assert len(jsons) == 1
+    status = json.loads(jsons[0].read_text(encoding="utf-8"))
+    assert status["pressure"] == [0] * 16
+    assert status["cols"] == 4
+    assert status["rows"] == 4
+
+
+def test_mock_warning_status_is_saved_and_cleared(client, tmp_path):
+    client.post("/api/mock-warning")
+
+    image_dir = tmp_path / "warnings" / "images"
+    mock_statuses = list(image_dir.glob("mock_*.json"))
+    assert len(mock_statuses) == 1
+    status = json.loads(mock_statuses[0].read_text(encoding="utf-8"))
+    assert "pressure" in status and "cols" in status and "rows" in status
+
+    client.post("/api/mock-warning/clear")
+    assert list(image_dir.glob("mock_*.json")) == []
 
 
 def test_client_requests_touch_connection_state(client):

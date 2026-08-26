@@ -1,1051 +1,1533 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
-<head>
-<meta charset="utf-8">
-<title>Pressure Risk Dashboard</title>
-<style>
-  body {
-    background: #14161a;
-    color: #e6e6e6;
-    font-family: -apple-system, "Segoe UI", sans-serif;
-    margin: 0;
-    padding: 24px;
-  }
-  h1 { font-size: 18px; font-weight: 600; margin: 0 0 16px; }
-  #status {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 16px;
-  }
-  #status.ok { background: #1f3a2a; color: #6fd18a; }
-  #status.warn { background: #3a1f1f; color: #ff8080; }
-  #connStatus {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 16px;
-    margin-left: 8px;
-  }
-  #connStatus.ok { background: #1f3a2a; color: #6fd18a; }
-  #connStatus.warn { background: #3a1f1f; color: #ff8080; }
-  #connStatus.unknown { background: #2a2c30; color: #a0a4ab; }
-  #meta { font-size: 13px; color: #a0a4ab; margin-bottom: 16px; line-height: 1.6; }
-  canvas { border: 1px solid #333; image-rendering: pixelated; background: #0a0b0d; width: 100%; max-width: 900px; height: auto; display: block; }
-  #riskImage { display: none; margin-top: 16px; width: 100%; max-width: 900px; border: 1px solid #333; }
-  #legend { margin-top: 12px; font-size: 12px; color: #a0a4ab; }
-  #legend span { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
-
-  #settingsBtn {
-    position: fixed;
-    top: 24px;
-    left: 24px;
-    z-index: 20;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    border: 1px solid #333;
-    background: #1c1e23;
-    color: #e6e6e6;
-    font-size: 16px;
-    cursor: pointer;
-  }
-  #settingsBtn:hover { background: #24262c; }
-
-  #warningOverlay {
-    display: none;
-    position: fixed;
-    top: 24px;
-    right: 24px;
-    z-index: 50;
-    pointer-events: none;
-  }
-  #warningOverlay.open { display: block; }
-  #connLostOverlay {
-    display: none;
-    position: fixed;
-    top: 24px;
-    left: 24px;
-    z-index: 50;
-    pointer-events: none;
-  }
-  #connLostOverlay.open { display: block; }
-  #connLostModal {
-    background: #1c1e23;
-    border: 1px solid #ffb020;
-    border-radius: 10px;
-    padding: 16px 20px;
-    width: 280px;
-    max-width: 85vw;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-    text-align: center;
-    pointer-events: auto;
-  }
-  #connLostModal h2 { margin: 0 0 6px; font-size: 15px; color: #ffb020; }
-  #connLostModal p { margin: 0 0 12px; font-size: 12px; color: #c9ccd1; line-height: 1.5; }
-  #connLostModal button {
-    background: #ffb020;
-    color: #14161a;
-    border: none;
-    border-radius: 6px;
-    padding: 6px 16px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  #connLostModal button:hover { background: #e69d13; }
-  .modalOverlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.55);
-    align-items: center;
-    justify-content: center;
-  }
-  .modalOverlay.open { display: flex; }
-  .modalBox {
-    background: #1c1e23;
-    border-radius: 10px;
-    padding: 24px;
-    width: 320px;
-    max-width: 90vw;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-  }
-  #warningModal {
-    background: #1c1e23;
-    border: 1px solid #ff3b3b;
-    border-radius: 10px;
-    padding: 20px;
-    width: 300px;
-    max-width: 85vw;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-    text-align: center;
-    pointer-events: auto;
-  }
-  #warningModal h2 { margin: 0 0 8px; font-size: 18px; color: #ff8080; }
-  #warningModal p { margin: 0 0 20px; font-size: 13px; color: #c9ccd1; line-height: 1.6; }
-  #warningModal button {
-    background: #ff3b3b;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 20px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  #warningModal button:hover { background: #e03333; }
-  #warningModal input[type="text"] {
-    width: 100%;
-    box-sizing: border-box;
-    background: #14161a;
-    border: 1px solid #333;
-    color: #e6e6e6;
-    border-radius: 4px;
-    padding: 8px 10px;
-    font-size: 13px;
-    margin-bottom: 12px;
-  }
-  #warningModal label { display: block; font-size: 12px; color: #a0a4ab; margin: 0 0 6px; text-align: left; }
-  #configPendingModal { border-color: #3a3d43; text-align: left; }
-  #configPendingModal h2 { margin: 0 0 8px; font-size: 16px; color: #e6e6e6; }
-  #configPendingModal p { margin: 0 0 12px; font-size: 13px; color: #c9ccd1; line-height: 1.6; }
-  #configPendingDetail {
-    font-size: 12px;
-    color: #a0a4ab;
-    background: #14161a;
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 8px 10px;
-    margin-bottom: 16px;
-    line-height: 1.6;
-    word-break: break-all;
-  }
-  #configPendingModal .btnRow { display: flex; gap: 8px; }
-  #configPendingModal .btnRow button {
-    flex: 1;
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    border: 1px solid #3a3d43;
-  }
-  #configPendingRestoreBtn { background: #2a6b3f; color: #fff; border-color: #2a6b3f; }
-  #configPendingRestoreBtn:hover { background: #33814c; }
-  #configPendingDefaultBtn { background: #2a2c30; color: #e6e6e6; }
-  #configPendingDefaultBtn:hover { background: #34363c; }
-  #settingsPanel {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 100%;
-    width: 260px;
-    background: #1c1e23;
-    border-right: 1px solid #333;
-    box-shadow: 2px 0 12px rgba(0,0,0,0.4);
-    padding: 72px 20px 20px;
-    box-sizing: border-box;
-    transform: translateX(-100%);
-    transition: transform 0.2s ease;
-    z-index: 10;
-  }
-  #settingsPanel.open { transform: translateX(0); }
-  #settingsPanel { overflow-y: auto; }
-  #settingsPanel h2 { font-size: 14px; margin: 0 0 16px; }
-  #settingsPanel h3 {
-    font-size: 12px;
-    color: #a0a4ab;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin: 20px 0 12px;
-    padding-top: 12px;
-    border-top: 1px solid #2a2c30;
-  }
-  #settingsPanel label { display: block; font-size: 12px; color: #a0a4ab; margin-bottom: 4px; }
-  #settingsPanel .field { margin-bottom: 16px; }
-  #settingsPanel input[type="number"] {
-    width: 100%;
-    box-sizing: border-box;
-    background: #14161a;
-    border: 1px solid #333;
-    color: #e6e6e6;
-    border-radius: 4px;
-    padding: 6px 8px;
-    font-size: 13px;
-  }
-  #settingsPanel input[type="range"] { width: 100%; }
-  #settingsPanel .readOnlyValue {
-    font-size: 12px;
-    color: #c9ccd1;
-    background: #14161a;
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 6px 8px;
-    word-break: break-all;
-  }
-  #maskCanvas {
-    border: 1px solid #333;
-    background: #14161a;
-    image-rendering: pixelated;
-    width: 100%;
-    max-width: 220px;
-    height: auto;
-    display: block;
-    cursor: crosshair;
-    touch-action: none;
-  }
-  #maskHint { font-size: 11px; color: #a0a4ab; margin: 6px 0 12px; line-height: 1.5; }
-  #settingsPanel .settingsSaveBtn,
-  #settingsPanel .settingsActionBtn {
-    width: 100%;
-    background: #2a2c30;
-    color: #e6e6e6;
-    border: 1px solid #3a3d43;
-    border-radius: 4px;
-    padding: 8px 10px;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  #settingsPanel .settingsSaveBtn:hover,
-  #settingsPanel .settingsActionBtn:hover { background: #34363c; }
-  #settingsMsg { font-size: 12px; color: #6fd18a; min-height: 16px; }
-  #settingsOverlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.3);
-    z-index: 5;
-  }
-  #settingsOverlay.open { display: block; }
-  #content { padding-left: 52px; }
-  #mainRow { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
-  #leftCol { flex: 0 0 auto; }
-  #historyPanel {
-    flex: 1 1 260px;
-    min-width: 260px;
-    max-width: 360px;
-    background: #1c1e23;
-    border: 1px solid #333;
-    border-radius: 8px;
-    padding: 14px 16px;
-    max-height: 640px;
-    overflow-y: auto;
-  }
-  #historyPanel h2 { font-size: 14px; margin: 0 0 12px; }
-  #historyList { list-style: none; margin: 0; padding: 0; font-size: 12px; }
-  #historyList li {
-    padding: 8px 0;
-    border-bottom: 1px solid #2a2c30;
-    color: #c9ccd1;
-    line-height: 1.5;
-  }
-  #historyList li:last-child { border-bottom: none; }
-  #historyList .historyTime { color: #e6e6e6; font-weight: 600; }
-  #historyList .historyCells { color: #ff8080; }
-  #historyList .historyMockTag {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 1px 6px;
-    font-size: 10px;
-    font-weight: 700;
-    color: #1a1a1a;
-    background: #f5c518;
-    border-radius: 3px;
-    vertical-align: middle;
-  }
-  #historyEmpty { font-size: 12px; color: #a0a4ab; }
-</style>
-</head>
-<body>
-  <button id="settingsBtn" title="설정">⚙</button>
-  <div id="settingsOverlay"></div>
-  <div id="settingsPanel">
-    <h2>설정</h2>
-
-    <div class="field">
-      <button id="resetDefaultsBtn" class="settingsActionBtn" style="border-color:#ff3b3b; color:#ff8080;">모든 설정 기본값으로 초기화</button>
-    </div>
-
-    <div class="field">
-      <label for="pollInput">폴링 주기 (ms)</label>
-      <input type="number" id="pollInput" min="200" step="100">
-    </div>
-
-    <h3>위험 감지 설정</h3>
-    <div class="field">
-      <label for="criticalPressureInput">위험 압력 기준 (mmHg)</label>
-      <input type="number" id="criticalPressureInput" min="0" step="0.1">
-    </div>
-    <div class="field">
-      <label for="criticalTimeInput">위험 지속 시간 기준 (min)</label>
-      <input type="number" id="criticalTimeInput" min="0" step="0.1">
-    </div>
-    <div class="field">
-      <button id="saveDetectionBtn" class="settingsSaveBtn">저장</button>
-    </div>
-
-    <h3>마스크 설정</h3>
-    <div id="maskHint">센서 데이터가 배경에 표시됩니다("현재 상태 요청"으로 갱신). 드래그하여 감지에서 제외할 영역을 칠하세요.</div>
-    <div class="field">
-      <canvas id="maskCanvas"></canvas>
-    </div>
-    <div class="field">
-      <button id="saveMaskBtn" class="settingsSaveBtn">마스크 저장</button>
-    </div>
-    <div class="field">
-      <button id="resetMaskBtn" class="settingsActionBtn">전체 초기화 (마스크 없음)</button>
-    </div>
-
-    <h3>시스템 설정</h3>
-    <div class="field">
-      <label for="volumeInput">알림 소리 크기 (<span id="volumeValue">100</span>%)</label>
-      <input type="range" id="volumeInput" min="0" max="100" step="1">
-    </div>
-    <div class="field">
-      <label for="soundStyleInput">알림 소리 종류</label>
-      <select id="soundStyleInput">
-        <option value="beep">비프음 (짧은 단음)</option>
-        <option value="double">더블 비프 (두 번 울림)</option>
-        <option value="chime">차임벨 (띠리링)</option>
-        <option value="siren">사이렌 (오르내림, 긴 경고음)</option>
-      </select>
-      <button type="button" id="soundTestBtn" class="settingsActionBtn">소리 테스트</button>
-    </div>
-    <div class="field">
-      <label>데이터 저장 경로</label>
-      <div id="warningDirValue" class="readOnlyValue">불러오는 중...</div>
-    </div>
-
-    <h3>개발자 설정</h3>
-    <div class="field">
-      <label for="calibrationInput">calibration factor</label>
-      <input type="number" id="calibrationInput" min="0" step="0.01">
-    </div>
-    <div class="field">
-      <label for="rowsInput">sensor rows</label>
-      <input type="number" id="rowsInput" min="1" step="1">
-    </div>
-    <div class="field">
-      <label for="colsInput">sensor cols</label>
-      <input type="number" id="colsInput" min="1" step="1">
-    </div>
-    <div class="field">
-      <button id="saveDevBtn" class="settingsSaveBtn">저장</button>
-    </div>
-    <div class="field">
-      <button id="requestStatusBtn" class="settingsActionBtn">현재 상태(STATUS) 요청</button>
-    </div>
-    <div class="field">
-      <button id="mockWarningBtn" class="settingsActionBtn">모의 경고 발생</button>
-    </div>
-    <div class="field">
-      <button id="clearMockWarningsBtn" class="settingsActionBtn" style="border-color:#ff3b3b; color:#ff8080;">모의 경고 기록 지우기</button>
-    </div>
-    <div id="settingsMsg" class="settingsMsg"></div>
-  </div>
-
-  <div id="warningOverlay">
-    <div id="warningModal">
-      <h2>⚠ 위험 경고</h2>
-      <p id="warningModalText">압력 위험이 감지되었습니다.</p>
-      <label for="warningSiteInput">위험 발생 부위</label>
-      <input type="text" id="warningSiteInput" placeholder="예: 엉치뼈, 뒤꿈치">
-      <button id="warningModalCloseBtn">저장 후 확인</button>
-    </div>
-  </div>
-
-  <div id="connLostOverlay">
-    <div id="connLostModal">
-      <h2>⚠ 연결 끊김</h2>
-      <p id="connLostModalText">클라이언트 연결이 끊어졌습니다.</p>
-      <button id="connLostModalCloseBtn">확인</button>
-    </div>
-  </div>
-
-  <div id="configPendingOverlay" class="modalOverlay" style="z-index:60;">
-    <div id="configPendingModal" class="modalBox">
-      <h2>서버가 재시작되었습니다</h2>
-      <p>이전 서버 종료 전 저장된 설정이 있습니다. 어떤 설정을 사용할까요?</p>
-      <div id="configPendingDetail"></div>
-      <div class="btnRow">
-        <button id="configPendingRestoreBtn">이전 설정 복원</button>
-        <button id="configPendingDefaultBtn">기본값 사용</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="content">
-  <h1>Pressure Risk Dashboard</h1>
-  <div id="status" class="ok">대기 중</div>
-  <div id="connStatus" class="unknown">클라이언트 상태 확인 중</div>
-  <div id="meta">이벤트 없음</div>
-  <div id="mainRow">
-    <div id="leftCol">
-      <canvas id="grid"></canvas>
-      <div id="legend">
-        <span style="background:#3a3f4a"></span>압력 감지 (실루엣)
-        <span style="background:#ff3b3b; margin-left:16px"></span>위험 셀 (risky_idx)
-        <span style="background:#8a5cf6; margin-left:16px"></span>감지 제외 영역 (mask)
-      </div>
-      <img id="riskImage" alt="위험 경고 스냅샷">
-      <div id="imageMeta" style="display:none; font-size:12px; color:#a0a4ab; margin-top:4px;">위험 경고 스냅샷 (현재 프레임 + risk point overlay)</div>
-    </div>
-    <div id="historyPanel">
-      <h2>최근 경고 이력</h2>
-      <div id="historyEmpty">이력 없음</div>
-      <ul id="historyList"></ul>
-    </div>
-  </div>
-  </div>
-
-<script>
-let POLL_MS = 1500;
-let pollTimer = null;
-const settingsBtn = document.getElementById('settingsBtn');
-const settingsPanel = document.getElementById('settingsPanel');
-const settingsOverlay = document.getElementById('settingsOverlay');
-const pollInput = document.getElementById('pollInput');
-pollInput.value = POLL_MS;
-
-function toggleSettings() {
-  settingsPanel.classList.toggle('open');
-  settingsOverlay.classList.toggle('open');
-}
-settingsBtn.addEventListener('click', toggleSettings);
-settingsOverlay.addEventListener('click', toggleSettings);
-
-pollInput.addEventListener('change', () => {
-  const v = parseInt(pollInput.value, 10);
-  if (!isNaN(v) && v >= 200) {
-    POLL_MS = v;
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(poll, POLL_MS);
-  }
-});
-
-// -- 알림 소리 크기 (브라우저 로컬 설정) --
-const volumeInput = document.getElementById('volumeInput');
-const volumeValue = document.getElementById('volumeValue');
-let alertVolume = parseInt(localStorage.getItem('alertVolume') ?? '100', 10);
-volumeInput.value = alertVolume;
-volumeValue.textContent = alertVolume;
-volumeInput.addEventListener('input', () => {
-  alertVolume = parseInt(volumeInput.value, 10);
-  volumeValue.textContent = alertVolume;
-  localStorage.setItem('alertVolume', String(alertVolume));
-});
-
-const soundStyleInput = document.getElementById('soundStyleInput');
-const soundTestBtn = document.getElementById('soundTestBtn');
-let alertSoundStyle = localStorage.getItem('alertSoundStyle') ?? 'siren';
-soundStyleInput.value = alertSoundStyle;
-soundStyleInput.addEventListener('change', () => {
-  alertSoundStyle = soundStyleInput.value;
-  localStorage.setItem('alertSoundStyle', alertSoundStyle);
-});
-soundTestBtn.addEventListener('click', () => playAlertBeep());
-
-const warningOverlay = document.getElementById('warningOverlay');
-const warningModalText = document.getElementById('warningModalText');
-const warningSiteInput = document.getElementById('warningSiteInput');
-let pendingWarningReceivedAt = null;
-
-document.getElementById('warningModalCloseBtn').addEventListener('click', async () => {
-  const site = warningSiteInput.value.trim();
-  if (pendingWarningReceivedAt !== null && site) {
-    try {
-      await fetch('/api/history/site', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ received_at: pendingWarningReceivedAt, site }),
-      });
-    } catch (e) { /* ignore */ }
-    pollHistory(true);
-  }
-  warningOverlay.classList.remove('open');
-});
-
-function showWarningPopup(ev) {
-  const receivedAt = new Date(ev.received_at * 1000).toLocaleTimeString('ko-KR');
-  const mockPrefix = ev.is_mock ? '[모의] ' : '';
-  warningModalText.textContent =
-    `${mockPrefix}위험 셀 ${ev.risky_cells.length}개가 감지되었습니다. (수신 ${receivedAt})`;
-  pendingWarningReceivedAt = ev.received_at;
-  warningSiteInput.value = '';
-  warningOverlay.classList.add('open');
-}
-
-const connLostOverlay = document.getElementById('connLostOverlay');
-const connLostModalText = document.getElementById('connLostModalText');
-document.getElementById('connLostModalCloseBtn').addEventListener('click', () => {
-  connLostOverlay.classList.remove('open');
-});
-
-function showConnLostPopup(lastSeen) {
-  const since = lastSeen ? new Date(lastSeen * 1000).toLocaleTimeString('ko-KR') : '?';
-  connLostModalText.textContent = `클라이언트 연결이 끊어졌습니다. (마지막 수신 ${since})`;
-  connLostOverlay.classList.add('open');
-}
-
-function playAlertBeep() {
-  if (alertVolume <= 0) return;
-  try {
-    const ctxA = new (window.AudioContext || window.webkitAudioContext)();
-    const peak = (alertVolume / 100) * 0.2;
-
-    function tone(freq, startAt, duration, glideTo) {
-      const osc = ctxA.createOscillator();
-      const gain = ctxA.createGain();
-      osc.frequency.setValueAtTime(freq, ctxA.currentTime + startAt);
-      if (glideTo) {
-        osc.frequency.linearRampToValueAtTime(glideTo, ctxA.currentTime + startAt + duration);
+  <head>
+    <meta charset="utf-8" />
+    <title>Pressure Risk Dashboard</title>
+    <style>
+      body {
+        background: #14161a;
+        color: #e6e6e6;
+        font-family: -apple-system, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 24px;
       }
-      gain.gain.setValueAtTime(0, ctxA.currentTime + startAt);
-      gain.gain.linearRampToValueAtTime(peak, ctxA.currentTime + startAt + 0.02);
-      gain.gain.setValueAtTime(peak, ctxA.currentTime + startAt + duration - 0.03);
-      gain.gain.linearRampToValueAtTime(0, ctxA.currentTime + startAt + duration);
-      osc.connect(gain);
-      gain.connect(ctxA.destination);
-      osc.start(ctxA.currentTime + startAt);
-      osc.stop(ctxA.currentTime + startAt + duration + 0.02);
-      return startAt + duration;
-    }
+      h1 {
+        font-size: 24px;
+        font-weight: 600;
+        margin: 0 0 16px;
+      }
+      #status {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 999px;
+        font-size: 17px;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+      #status.ok {
+        background: #1f3a2a;
+        color: #6fd18a;
+      }
+      #status.warn {
+        background: #3a1f1f;
+        color: #ff8080;
+      }
+      #connStatus {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 999px;
+        font-size: 17px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        margin-left: 8px;
+      }
+      #connStatus.ok {
+        background: #1f3a2a;
+        color: #6fd18a;
+      }
+      #connStatus.warn {
+        background: #3a1f1f;
+        color: #ff8080;
+      }
+      #connStatus.unknown {
+        background: #2a2c30;
+        color: #a0a4ab;
+      }
+      #meta {
+        font-size: 17px;
+        color: #a0a4ab;
+        margin-bottom: 16px;
+        line-height: 1.6;
+      }
+      canvas {
+        border: 1px solid #333;
+        image-rendering: pixelated;
+        background: #0a0b0d;
+        width: 100%;
+        max-width: 900px;
+        height: auto;
+        display: block;
+      }
+      #legend {
+        margin-top: 12px;
+        font-size: 16px;
+        color: #a0a4ab;
+      }
+      #legend span {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        margin-right: 6px;
+        vertical-align: middle;
+        border-radius: 2px;
+      }
 
-    let endAt;
-    switch (alertSoundStyle) {
-      case 'double':
-        tone(880, 0, 0.2);
-        endAt = tone(880, 0.35, 0.2);
-        break;
-      case 'chime':
-        tone(1046.5, 0, 0.35);
-        endAt = tone(1318.5, 0.3, 0.5);
-        break;
-      case 'siren':
-        endAt = tone(600, 0, 1.6, 1100);
-        break;
-      case 'beep':
-      default:
-        endAt = tone(880, 0, 0.6);
-        break;
-    }
-    setTimeout(() => ctxA.close(), (endAt + 0.1) * 1000);
-  } catch (e) { /* ignore */ }
-}
+      #settingsBtn {
+        position: fixed;
+        top: 24px;
+        left: 24px;
+        z-index: 20;
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        border: 1px solid #333;
+        background: #1c1e23;
+        color: #e6e6e6;
+        font-size: 22px;
+        cursor: pointer;
+      }
+      #settingsBtn:hover {
+        background: #24262c;
+      }
 
-function showSettingsMsg(text, isError) {
-  const el = document.getElementById('settingsMsg');
-  el.textContent = text;
-  el.style.color = isError ? '#ff8080' : '#6fd18a';
-  setTimeout(() => { el.textContent = ''; }, 3000);
-}
+      #warningOverlay {
+        display: none;
+        position: fixed;
+        top: 24px;
+        right: 24px;
+        z-index: 50;
+        pointer-events: none;
+      }
+      #warningOverlay.open {
+        display: block;
+      }
+      #connLostOverlay {
+        display: none;
+        position: fixed;
+        top: 24px;
+        left: 24px;
+        z-index: 50;
+        pointer-events: none;
+      }
+      #connLostOverlay.open {
+        display: block;
+      }
+      #connLostModal {
+        background: #1c1e23;
+        border: 1px solid #ffb020;
+        border-radius: 10px;
+        padding: 16px 20px;
+        width: 280px;
+        max-width: 85vw;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+        text-align: center;
+        pointer-events: auto;
+      }
+      #connLostModal h2 {
+        margin: 0 0 6px;
+        font-size: 19px;
+        color: #ffb020;
+      }
+      #connLostModal p {
+        margin: 0 0 12px;
+        font-size: 16px;
+        color: #c9ccd1;
+        line-height: 1.5;
+      }
+      #connLostModal button {
+        background: #ffb020;
+        color: #14161a;
+        border: none;
+        border-radius: 6px;
+        padding: 6px 16px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #connLostModal button:hover {
+        background: #e69d13;
+      }
+      .modalOverlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        align-items: center;
+        justify-content: center;
+      }
+      .modalOverlay.open {
+        display: flex;
+      }
+      .modalBox {
+        background: #1c1e23;
+        border-radius: 10px;
+        padding: 24px;
+        width: 320px;
+        max-width: 90vw;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+      }
+      #warningModal {
+        background: #1c1e23;
+        border: 1px solid #ff3b3b;
+        border-radius: 10px;
+        padding: 20px;
+        width: 300px;
+        max-width: 85vw;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+        text-align: center;
+        pointer-events: auto;
+      }
+      #warningModal h2 {
+        margin: 0 0 8px;
+        font-size: 22px;
+        color: #ff8080;
+      }
+      #warningModal p {
+        margin: 0 0 20px;
+        font-size: 17px;
+        color: #c9ccd1;
+        line-height: 1.6;
+      }
+      #warningModal button {
+        background: #ff3b3b;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 20px;
+        font-size: 17px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #warningModal button:hover {
+        background: #e03333;
+      }
+      #warningModal input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        background: #14161a;
+        border: 1px solid #333;
+        color: #e6e6e6;
+        border-radius: 4px;
+        padding: 8px 10px;
+        font-size: 17px;
+        margin-bottom: 12px;
+      }
+      #warningModal label {
+        display: block;
+        font-size: 16px;
+        color: #a0a4ab;
+        margin: 0 0 6px;
+        text-align: left;
+      }
+      #historyDetailModal {
+        width: 420px;
+        text-align: left;
+      }
+      #historyDetailModal h2 {
+        margin: 0 0 8px;
+        font-size: 20px;
+        color: #e6e6e6;
+      }
+      #historyDetailMeta {
+        font-size: 16px;
+        color: #a0a4ab;
+        margin-bottom: 12px;
+        line-height: 1.6;
+      }
+      #historyDetailImageWrap {
+        background: #0a0b0d;
+        border: 1px solid #333;
+        border-radius: 6px;
+        margin-bottom: 14px;
+        min-height: 120px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #historyDetailImage {
+        max-width: 100%;
+        max-height: 320px;
+        display: block;
+      }
+      #historyDetailNoImage {
+        font-size: 16px;
+        color: #a0a4ab;
+        padding: 24px;
+      }
+      #historyDetailModal label {
+        display: block;
+        font-size: 16px;
+        color: #a0a4ab;
+        margin: 0 0 6px;
+      }
+      #historyDetailModal input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        background: #14161a;
+        border: 1px solid #333;
+        color: #e6e6e6;
+        border-radius: 4px;
+        padding: 8px 10px;
+        font-size: 17px;
+        margin-bottom: 14px;
+      }
+      #historyDetailModal .btnRow {
+        display: flex;
+        gap: 8px;
+      }
+      #historyDetailModal .btnRow button {
+        flex: 1;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 17px;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid #3a3d43;
+      }
+      #historyDetailSaveBtn {
+        background: #2a6b3f;
+        color: #fff;
+        border-color: #2a6b3f;
+      }
+      #historyDetailSaveBtn:hover {
+        background: #33814c;
+      }
+      #historyDetailCloseBtn {
+        background: #2a2c30;
+        color: #e6e6e6;
+      }
+      #historyDetailCloseBtn:hover {
+        background: #34363c;
+      }
+      #historyList li {
+        cursor: pointer;
+      }
+      #historyList li:hover {
+        background: #1c1e23;
+      }
+      #configPendingModal {
+        border-color: #3a3d43;
+        text-align: left;
+      }
+      #configPendingModal h2 {
+        margin: 0 0 8px;
+        font-size: 20px;
+        color: #e6e6e6;
+      }
+      #configPendingModal p {
+        margin: 0 0 12px;
+        font-size: 17px;
+        color: #c9ccd1;
+        line-height: 1.6;
+      }
+      #configPendingDetail {
+        font-size: 16px;
+        color: #a0a4ab;
+        background: #14161a;
+        border: 1px solid #333;
+        border-radius: 4px;
+        padding: 8px 10px;
+        margin-bottom: 16px;
+        line-height: 1.6;
+        word-break: break-all;
+      }
+      #configPendingModal .btnRow {
+        display: flex;
+        gap: 8px;
+      }
+      #configPendingModal .btnRow button {
+        flex: 1;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 17px;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid #3a3d43;
+      }
+      #configPendingRestoreBtn {
+        background: #2a6b3f;
+        color: #fff;
+        border-color: #2a6b3f;
+      }
+      #configPendingRestoreBtn:hover {
+        background: #33814c;
+      }
+      #configPendingDefaultBtn {
+        background: #2a2c30;
+        color: #e6e6e6;
+      }
+      #configPendingDefaultBtn:hover {
+        background: #34363c;
+      }
+      #settingsPanel {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 260px;
+        background: #1c1e23;
+        border-right: 1px solid #333;
+        box-shadow: 2px 0 12px rgba(0, 0, 0, 0.4);
+        padding: 72px 20px 20px;
+        box-sizing: border-box;
+        transform: translateX(-100%);
+        transition: transform 0.2s ease;
+        z-index: 10;
+      }
+      #settingsPanel.open {
+        transform: translateX(0);
+      }
+      #settingsPanel {
+        overflow-y: auto;
+      }
+      #settingsPanel h2 {
+        font-size: 18px;
+        margin: 0 0 16px;
+      }
+      #settingsPanel h3 {
+        font-size: 16px;
+        color: #a0a4ab;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin: 20px 0 12px;
+        padding-top: 12px;
+        border-top: 1px solid #2a2c30;
+      }
+      #settingsPanel label {
+        display: block;
+        font-size: 16px;
+        color: #a0a4ab;
+        margin-bottom: 4px;
+      }
+      #settingsPanel .field {
+        margin-bottom: 16px;
+      }
+      #settingsPanel input[type="number"] {
+        width: 100%;
+        box-sizing: border-box;
+        background: #14161a;
+        border: 1px solid #333;
+        color: #e6e6e6;
+        border-radius: 4px;
+        padding: 6px 8px;
+        font-size: 17px;
+      }
+      #settingsPanel input[type="range"] {
+        width: 100%;
+      }
+      #settingsPanel .readOnlyValue {
+        font-size: 16px;
+        color: #c9ccd1;
+        background: #14161a;
+        border: 1px solid #333;
+        border-radius: 4px;
+        padding: 6px 8px;
+        word-break: break-all;
+      }
+      #maskCanvas {
+        border: 1px solid #333;
+        background: #14161a;
+        image-rendering: pixelated;
+        width: 100%;
+        max-width: 220px;
+        height: auto;
+        display: block;
+        cursor: crosshair;
+        touch-action: none;
+      }
+      #maskHint {
+        font-size: 15px;
+        color: #a0a4ab;
+        margin: 6px 0 12px;
+        line-height: 1.5;
+      }
+      #settingsPanel .settingsSaveBtn,
+      #settingsPanel .settingsActionBtn {
+        width: 100%;
+        background: #2a2c30;
+        color: #e6e6e6;
+        border: 1px solid #3a3d43;
+        border-radius: 4px;
+        padding: 8px 10px;
+        font-size: 17px;
+        cursor: pointer;
+      }
+      #settingsPanel .settingsSaveBtn:hover,
+      #settingsPanel .settingsActionBtn:hover {
+        background: #34363c;
+      }
+      #settingsMsg {
+        font-size: 16px;
+        color: #6fd18a;
+        min-height: 16px;
+      }
+      #settingsOverlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 5;
+      }
+      #settingsOverlay.open {
+        display: block;
+      }
+      #content {
+        padding-left: 52px;
+      }
+      #mainRow {
+        display: flex;
+        gap: 24px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+      #leftCol {
+        flex: 0 0 auto;
+      }
+      #historyPanel {
+        flex: 1 1 260px;
+        min-width: 260px;
+        max-width: 360px;
+        background: #1c1e23;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 14px 16px;
+        max-height: 640px;
+        overflow-y: auto;
+      }
+      #historyPanel h2 {
+        font-size: 18px;
+        margin: 0 0 12px;
+      }
+      #historyList {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        font-size: 16px;
+      }
+      #historyList li {
+        padding: 8px 0;
+        border-bottom: 1px solid #2a2c30;
+        color: #c9ccd1;
+        line-height: 1.5;
+      }
+      #historyList li:last-child {
+        border-bottom: none;
+      }
+      #historyList .historyTime {
+        color: #e6e6e6;
+        font-weight: 600;
+      }
+      #historyList .historyCells {
+        color: #ff8080;
+      }
+      #historyList .historyMockTag {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 6px;
+        font-size: 14px;
+        font-weight: 700;
+        color: #1a1a1a;
+        background: #f5c518;
+        border-radius: 3px;
+        vertical-align: middle;
+      }
+      #historyEmpty {
+        font-size: 16px;
+        color: #a0a4ab;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="settingsBtn" title="설정">⚙</button>
+    <div id="settingsOverlay"></div>
+    <div id="settingsPanel">
+      <h2>설정</h2>
 
-// -- 위험 감지 설정 / 개발자 설정 (서버 /config) --
-const criticalPressureInput = document.getElementById('criticalPressureInput');
-const criticalTimeInput = document.getElementById('criticalTimeInput');
-const calibrationInput = document.getElementById('calibrationInput');
-const rowsInput = document.getElementById('rowsInput');
-const colsInput = document.getElementById('colsInput');
+      <div class="field">
+        <button
+          id="resetDefaultsBtn"
+          class="settingsActionBtn"
+          style="border-color: #ff3b3b; color: #ff8080"
+        >
+          모든 설정 기본값으로 초기화
+        </button>
+      </div>
 
-async function loadConfig() {
-  try {
-    const resp = await fetch('/config');
-    const cfg = await resp.json();
-    criticalPressureInput.value = cfg.critical_pressure;
-    criticalTimeInput.value = cfg.critical_time;
-    calibrationInput.value = cfg.calibration_factor;
-    rowsInput.value = cfg.rows;
-    colsInput.value = cfg.cols;
-    initMaskEditor(cfg.cols, cfg.rows, cfg.mask_excluded_idx || []);
-  } catch (e) { /* ignore */ }
-}
+      <div class="field">
+        <label for="pollInput">폴링 주기 (ms)</label>
+        <input type="number" id="pollInput" min="200" step="100" />
+      </div>
 
-// -- 마스크 설정 (감지 제외 영역, 서버 /config의 mask_excluded_idx) --
-const maskCanvas = document.getElementById('maskCanvas');
-const maskCtx = maskCanvas.getContext('2d');
-const MASK_CELL = 4; // px per grid cell in the (small) mask editor
-let maskCols = 0, maskRows = 0;
-let excludedIdx = new Set();
-let maskPainting = false;
-let maskPaintValue = true; // true = mark excluded, false = clear
-let latestPressure = null; // most recent sensor pressure snapshot, for overlay in the mask editor
+      <h3>위험 감지 설정</h3>
+      <div class="field">
+        <label for="criticalPressureInput">위험 압력 기준 (mmHg)</label>
+        <input type="number" id="criticalPressureInput" min="0" step="0.1" />
+      </div>
+      <div class="field">
+        <label for="criticalTimeInput">위험 지속 시간 기준 (min)</label>
+        <input type="number" id="criticalTimeInput" min="0" step="0.1" />
+      </div>
+      <div class="field">
+        <button id="saveDetectionBtn" class="settingsSaveBtn">저장</button>
+      </div>
 
-// Mirrors drawGrid's convention below: the sensor grid is rendered rotated
-// 90deg CCW from its raw (row, col) layout, so the physical canvas width/
-// height are swapped (rows drive width, cols drive height) and the same
-// translate+rotate transform is applied before any fillRect calls, which
-// stay in raw (col*CELL, row*CELL) space. The mask editor must match this
-// exactly, or its cols/rows orientation looks flipped relative to the main
-// grid above and the sensor readings drawn in the background.
-function drawMaskEditor() {
-  if (!maskCols || !maskRows) return;
-  maskCtx.setTransform(1, 0, 0, 1, 0, 0);
-  maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-  maskCtx.translate(0, maskCanvas.height);
-  maskCtx.rotate(-Math.PI / 2);
+      <h3>마스크 설정</h3>
+      <div id="maskHint">
+        센서 데이터가 배경에 표시됩니다("현재 상태 요청"으로 갱신). 드래그하여
+        감지에서 제외할 영역을 칠하세요.
+      </div>
+      <div class="field">
+        <canvas id="maskCanvas"></canvas>
+      </div>
+      <div class="field">
+        <button id="saveMaskBtn" class="settingsSaveBtn">마스크 저장</button>
+      </div>
+      <div class="field">
+        <button id="resetMaskBtn" class="settingsActionBtn">
+          전체 초기화 (마스크 없음)
+        </button>
+      </div>
 
-  if (latestPressure && latestPressure.length === maskCols * maskRows) {
-    for (let i = 0; i < latestPressure.length; i++) {
-      const v = latestPressure[i];
-      const row = Math.floor(i / maskCols), col = i % maskCols;
-      maskCtx.fillStyle = `rgb(${v},${v},${v})`;
-      maskCtx.fillRect(col * MASK_CELL, row * MASK_CELL, MASK_CELL, MASK_CELL);
-    }
-  } else {
-    maskCtx.fillStyle = '#2a2c30';
-    maskCtx.fillRect(0, 0, maskCols * MASK_CELL, maskRows * MASK_CELL);
-  }
+      <h3>시스템 설정</h3>
+      <div class="field">
+        <label for="volumeInput"
+          >알림 소리 크기 (<span id="volumeValue">100</span>%)</label
+        >
+        <input type="range" id="volumeInput" min="0" max="100" step="1" />
+      </div>
+      <div class="field">
+        <label for="soundStyleInput">알림 소리 종류</label>
+        <select id="soundStyleInput">
+          <option value="beep">비프음 (짧은 단음)</option>
+          <option value="double">더블 비프 (두 번 울림)</option>
+          <option value="chime">차임벨 (띠리링)</option>
+          <option value="siren">사이렌 (오르내림, 긴 경고음)</option>
+        </select>
+        <button type="button" id="soundTestBtn" class="settingsActionBtn">
+          소리 테스트
+        </button>
+      </div>
+      <div class="field">
+        <label>데이터 저장 경로</label>
+        <div id="warningDirValue" class="readOnlyValue">불러오는 중...</div>
+      </div>
 
-  maskCtx.fillStyle = 'rgba(138, 92, 246, 0.65)';
-  for (const idx of excludedIdx) {
-    const row = Math.floor(idx / maskCols), col = idx % maskCols;
-    maskCtx.fillRect(col * MASK_CELL, row * MASK_CELL, MASK_CELL, MASK_CELL);
-  }
-}
+      <h3>개발자 설정</h3>
+      <div class="field">
+        <label>서버 IP 주소 (현재 무선랜)</label>
+        <div id="serverIpValue" class="readOnlyValue">불러오는 중...</div>
+      </div>
+      <div class="field">
+        <label for="calibrationInput">calibration factor</label>
+        <input type="number" id="calibrationInput" min="0" step="0.01" />
+      </div>
+      <div class="field">
+        <label for="rowsInput">sensor rows</label>
+        <input type="number" id="rowsInput" min="1" step="1" />
+      </div>
+      <div class="field">
+        <label for="colsInput">sensor cols</label>
+        <input type="number" id="colsInput" min="1" step="1" />
+      </div>
+      <div class="field">
+        <button id="saveDevBtn" class="settingsSaveBtn">저장</button>
+      </div>
+      <div class="field">
+        <button id="requestStatusBtn" class="settingsActionBtn">
+          현재 상태(STATUS) 요청
+        </button>
+      </div>
+      <div class="field">
+        <button id="mockWarningBtn" class="settingsActionBtn">
+          모의 경고 발생
+        </button>
+      </div>
+      <div class="field">
+        <button
+          id="clearMockWarningsBtn"
+          class="settingsActionBtn"
+          style="border-color: #ff3b3b; color: #ff8080"
+        >
+          모의 경고 기록 지우기
+        </button>
+      </div>
+      <div id="settingsMsg" class="settingsMsg"></div>
+    </div>
 
-function updateMaskEditorPressure(pressure) {
-  if (!pressure || !maskCols || !maskRows || pressure.length !== maskCols * maskRows) return;
-  latestPressure = pressure;
-  drawMaskEditor();
-}
+    <div id="warningOverlay">
+      <div id="warningModal">
+        <h2>⚠ 위험 경고</h2>
+        <p id="warningModalText">압력 위험이 감지되었습니다.</p>
+        <label for="warningSiteInput">위험 발생 부위</label>
+        <input
+          type="text"
+          id="warningSiteInput"
+          placeholder="예: 엉치뼈, 뒤꿈치"
+        />
+        <button id="warningModalCloseBtn">저장 후 확인</button>
+      </div>
+    </div>
 
-function initMaskEditor(cols, rows, excludedList) {
-  maskCols = cols;
-  maskRows = rows;
-  excludedIdx = new Set(excludedList);
-  // Swapped to match the CCW rotation applied in drawMaskEditor (same as
-  // the main grid canvas: width follows rows, height follows cols).
-  maskCanvas.width = rows * MASK_CELL;
-  maskCanvas.height = cols * MASK_CELL;
-  drawMaskEditor();
-}
+    <div id="connLostOverlay">
+      <div id="connLostModal">
+        <h2>⚠ 장치 연결 끊김</h2>
+        <p id="connLostModalText">장치 연결이 끊어졌습니다.</p>
+        <button id="connLostModalCloseBtn">확인</button>
+      </div>
+    </div>
 
-function maskCellFromEvent(e) {
-  const rect = maskCanvas.getBoundingClientRect();
-  const scaleX = maskCanvas.width / rect.width;
-  const scaleY = maskCanvas.height / rect.height;
-  const screenX = (e.clientX - rect.left) * scaleX;
-  const screenY = (e.clientY - rect.top) * scaleY;
-  // Inverse of the translate(0,H)+rotate(-90deg) transform used for drawing.
-  const row = Math.floor(screenX / MASK_CELL);
-  const col = Math.floor((maskCanvas.height - screenY) / MASK_CELL);
-  if (col < 0 || col >= maskCols || row < 0 || row >= maskRows) return null;
-  return row * maskCols + col;
-}
+    <div id="historyDetailOverlay" class="modalOverlay" style="z-index: 55">
+      <div id="historyDetailModal" class="modalBox">
+        <h2>경고 이력 상세</h2>
+        <div id="historyDetailMeta"></div>
+        <div id="historyDetailImageWrap">
+          <img id="historyDetailImage" style="display: none" />
+          <div id="historyDetailNoImage" style="display: none">
+            저장된 이미지 없음
+          </div>
+        </div>
+        <label for="historyDetailSiteInput">위험 발생 부위</label>
+        <input
+          type="text"
+          id="historyDetailSiteInput"
+          placeholder="예: 엉치뼈, 뒤꿈치"
+        />
+        <div class="btnRow">
+          <button id="historyDetailSaveBtn">저장</button>
+          <button id="historyDetailCloseBtn">닫기</button>
+        </div>
+      </div>
+    </div>
 
-function paintMaskAt(e) {
-  const idx = maskCellFromEvent(e);
-  if (idx === null) return;
-  if (maskPaintValue) excludedIdx.add(idx);
-  else excludedIdx.delete(idx);
-  drawMaskEditor();
-}
+    <div id="configPendingOverlay" class="modalOverlay" style="z-index: 60">
+      <div id="configPendingModal" class="modalBox">
+        <h2>서버가 재시작되었습니다</h2>
+        <p>이전 서버 종료 전 저장된 설정이 있습니다. 어떤 설정을 사용할까요?</p>
+        <div id="configPendingDetail"></div>
+        <div class="btnRow">
+          <button id="configPendingRestoreBtn">이전 설정 복원</button>
+          <button id="configPendingDefaultBtn">기본값 사용</button>
+        </div>
+      </div>
+    </div>
 
-maskCanvas.addEventListener('pointerdown', (e) => {
-  maskPainting = true;
-  maskPaintValue = !excludedIdx.has(maskCellFromEvent(e));
-  paintMaskAt(e);
-});
-maskCanvas.addEventListener('pointermove', (e) => {
-  if (maskPainting) paintMaskAt(e);
-});
-window.addEventListener('pointerup', () => { maskPainting = false; });
+    <div id="content">
+      <h1>Pressure Risk Dashboard</h1>
+      <div id="status" class="ok">대기 중</div>
+      <div id="connStatus" class="unknown">장치 상태 확인 중</div>
+      <div id="meta">이벤트 없음</div>
+      <div id="mainRow">
+        <div id="leftCol">
+          <div
+            id="gridMeta"
+            style="font-size: 16px; color: #a0a4ab; margin-bottom: 4px"
+          >
+            위험 감지 데이터
+          </div>
+          <canvas id="grid"></canvas>
+          <div id="legend">
+            <span style="background: #3a3f4a"></span>실루엣
+            <span style="background: #ff3b3b; margin-left: 16px"></span>위험
+            감지 영역 (risky_idx)
+            <span style="background: #8a5cf6; margin-left: 16px"></span>감지
+            제외 영역 (mask)
+          </div>
+        </div>
+        <div id="historyPanel">
+          <h2>최근 경고 이력</h2>
+          <div id="historyEmpty">이력 없음</div>
+          <ul id="historyList"></ul>
+        </div>
+      </div>
+    </div>
 
-document.getElementById('saveMaskBtn').addEventListener('click', async () => {
-  try {
-    await putConfig({ mask_excluded_idx: Array.from(excludedIdx) });
-    showSettingsMsg('마스크가 저장되었습니다.');
-  } catch (e) {
-    showSettingsMsg('저장 실패', true);
-  }
-});
+    <script>
+      let POLL_MS = 1500;
+      let pollTimer = null;
+      const settingsBtn = document.getElementById("settingsBtn");
+      const settingsPanel = document.getElementById("settingsPanel");
+      const settingsOverlay = document.getElementById("settingsOverlay");
+      const pollInput = document.getElementById("pollInput");
+      pollInput.value = POLL_MS;
 
-document.getElementById('resetMaskBtn').addEventListener('click', async () => {
-  excludedIdx = new Set();
-  drawMaskEditor();
-  try {
-    await putConfig({ mask_excluded_idx: [] });
-    showSettingsMsg('마스크가 초기화되었습니다.');
-  } catch (e) {
-    showSettingsMsg('저장 실패', true);
-  }
-});
+      function toggleSettings() {
+        settingsPanel.classList.toggle("open");
+        settingsOverlay.classList.toggle("open");
+      }
+      settingsBtn.addEventListener("click", toggleSettings);
+      settingsOverlay.addEventListener("click", toggleSettings);
 
-document.getElementById('resetDefaultsBtn').addEventListener('click', async () => {
-  if (!confirm('모든 설정을 기본값으로 되돌리시겠습니까? 저장된 마스크와 임계값이 모두 초기화됩니다.')) return;
-  try {
-    const resp = await fetch('/api/defaults');
-    const d = await resp.json();
-    await putConfig(d);
+      pollInput.addEventListener("change", () => {
+        const v = parseInt(pollInput.value, 10);
+        if (!isNaN(v) && v >= 200) {
+          POLL_MS = v;
+          if (pollTimer) clearInterval(pollTimer);
+          pollTimer = setInterval(poll, POLL_MS);
+        }
+      });
 
-    criticalPressureInput.value = d.critical_pressure;
-    criticalTimeInput.value = d.critical_time;
-    calibrationInput.value = d.calibration_factor;
-    rowsInput.value = d.rows;
-    colsInput.value = d.cols;
-    initMaskEditor(d.cols, d.rows, d.mask_excluded_idx || []);
+      // -- 알림 소리 크기 (브라우저 로컬 설정) --
+      const volumeInput = document.getElementById("volumeInput");
+      const volumeValue = document.getElementById("volumeValue");
+      let alertVolume = parseInt(
+        localStorage.getItem("alertVolume") ?? "100",
+        10,
+      );
+      volumeInput.value = alertVolume;
+      volumeValue.textContent = alertVolume;
+      volumeInput.addEventListener("input", () => {
+        alertVolume = parseInt(volumeInput.value, 10);
+        volumeValue.textContent = alertVolume;
+        localStorage.setItem("alertVolume", String(alertVolume));
+      });
 
-    POLL_MS = 1500;
-    pollInput.value = POLL_MS;
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(poll, POLL_MS);
+      const soundStyleInput = document.getElementById("soundStyleInput");
+      const soundTestBtn = document.getElementById("soundTestBtn");
+      let alertSoundStyle = localStorage.getItem("alertSoundStyle") ?? "chime";
+      soundStyleInput.value = alertSoundStyle;
+      soundStyleInput.addEventListener("change", () => {
+        alertSoundStyle = soundStyleInput.value;
+        localStorage.setItem("alertSoundStyle", alertSoundStyle);
+      });
+      soundTestBtn.addEventListener("click", () => playAlertBeep());
 
-    alertVolume = 100;
-    volumeInput.value = alertVolume;
-    volumeValue.textContent = alertVolume;
-    localStorage.setItem('alertVolume', String(alertVolume));
+      const warningOverlay = document.getElementById("warningOverlay");
+      const warningModalText = document.getElementById("warningModalText");
+      const warningSiteInput = document.getElementById("warningSiteInput");
+      let pendingWarningReceivedAt = null;
 
-    alertSoundStyle = 'siren';
-    soundStyleInput.value = alertSoundStyle;
-    localStorage.setItem('alertSoundStyle', alertSoundStyle);
+      document
+        .getElementById("warningModalCloseBtn")
+        .addEventListener("click", async () => {
+          const site = warningSiteInput.value.trim();
+          if (pendingWarningReceivedAt !== null && site) {
+            try {
+              await fetch("/api/history/site", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  received_at: pendingWarningReceivedAt,
+                  site,
+                }),
+              });
+            } catch (e) {
+              /* ignore */
+            }
+            pollHistory(true);
+          }
+          warningOverlay.classList.remove("open");
+        });
 
-    showSettingsMsg('모든 설정이 기본값으로 초기화되었습니다.');
-  } catch (e) {
-    showSettingsMsg('초기화 실패', true);
-  }
-});
+      function showWarningPopup(ev) {
+        const receivedAt = new Date(ev.received_at * 1000).toLocaleTimeString(
+          "ko-KR",
+        );
+        const mockPrefix = ev.is_mock ? "[모의] " : "";
+        warningModalText.innerHTML = `${mockPrefix}위험 압력이 감지되었습니다.<br>(수신 ${receivedAt})`;
+        pendingWarningReceivedAt = ev.received_at;
+        warningSiteInput.value = "";
+        warningOverlay.classList.add("open");
+      }
 
-async function loadMeta() {
-  try {
-    const resp = await fetch('/api/meta');
-    const meta = await resp.json();
-    document.getElementById('warningDirValue').textContent = meta.warning_dir;
-  } catch (e) {
-    document.getElementById('warningDirValue').textContent = '알 수 없음';
-  }
-}
+      const connLostOverlay = document.getElementById("connLostOverlay");
+      const connLostModalText = document.getElementById("connLostModalText");
+      document
+        .getElementById("connLostModalCloseBtn")
+        .addEventListener("click", () => {
+          connLostOverlay.classList.remove("open");
+        });
 
-async function putConfig(updates) {
-  const resp = await fetch('/config', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates),
-  });
-  return resp.json();
-}
+      function showConnLostPopup(lastSeen) {
+        const since = lastSeen
+          ? new Date(lastSeen * 1000).toLocaleTimeString("ko-KR")
+          : "?";
+        connLostModalText.innerHTML = `장치 연결이 끊어졌습니다.<br>(마지막 수신 ${since})`;
+        connLostOverlay.classList.add("open");
+      }
 
-document.getElementById('saveDetectionBtn').addEventListener('click', async () => {
-  try {
-    await putConfig({
-      critical_pressure: parseFloat(criticalPressureInput.value),
-      critical_time: parseFloat(criticalTimeInput.value),
-    });
-    showSettingsMsg('위험 감지 설정이 저장되었습니다.');
-  } catch (e) {
-    showSettingsMsg('저장 실패', true);
-  }
-});
+      function playAlertBeep() {
+        if (alertVolume <= 0) return;
+        try {
+          const ctxA = new (window.AudioContext || window.webkitAudioContext)();
+          const peak = (alertVolume / 100) * 0.2;
 
-document.getElementById('saveDevBtn').addEventListener('click', async () => {
-  try {
-    await putConfig({
-      calibration_factor: parseFloat(calibrationInput.value),
-      rows: parseInt(rowsInput.value, 10),
-      cols: parseInt(colsInput.value, 10),
-    });
-    showSettingsMsg('개발자 설정이 저장되었습니다.');
-  } catch (e) {
-    showSettingsMsg('저장 실패', true);
-  }
-});
+          function tone(freq, startAt, duration, glideTo) {
+            const osc = ctxA.createOscillator();
+            const gain = ctxA.createGain();
+            osc.frequency.setValueAtTime(freq, ctxA.currentTime + startAt);
+            if (glideTo) {
+              osc.frequency.linearRampToValueAtTime(
+                glideTo,
+                ctxA.currentTime + startAt + duration,
+              );
+            }
+            gain.gain.setValueAtTime(0, ctxA.currentTime + startAt);
+            gain.gain.linearRampToValueAtTime(
+              peak,
+              ctxA.currentTime + startAt + 0.02,
+            );
+            gain.gain.setValueAtTime(
+              peak,
+              ctxA.currentTime + startAt + duration - 0.03,
+            );
+            gain.gain.linearRampToValueAtTime(
+              0,
+              ctxA.currentTime + startAt + duration,
+            );
+            osc.connect(gain);
+            gain.connect(ctxA.destination);
+            osc.start(ctxA.currentTime + startAt);
+            osc.stop(ctxA.currentTime + startAt + duration + 0.02);
+            return startAt + duration;
+          }
 
-document.getElementById('requestStatusBtn').addEventListener('click', async () => {
-  try {
-    await fetch('/command', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: 'state' }),
-    });
-    showSettingsMsg('상태 요청을 전송했습니다.');
-  } catch (e) {
-    showSettingsMsg('요청 실패', true);
-  }
-});
+          let endAt;
+          switch (alertSoundStyle) {
+            case "double":
+              tone(880, 0, 0.2);
+              endAt = tone(880, 0.35, 0.2);
+              break;
+            case "chime":
+              tone(1046.5, 0, 0.35);
+              endAt = tone(1318.5, 0.3, 0.5);
+              break;
+            case "siren":
+              endAt = tone(600, 0, 1.6, 1100);
+              break;
+            case "beep":
+            default:
+              endAt = tone(880, 0, 0.6);
+              break;
+          }
+          setTimeout(() => ctxA.close(), (endAt + 0.1) * 1000);
+        } catch (e) {
+          /* ignore */
+        }
+      }
 
-document.getElementById('mockWarningBtn').addEventListener('click', async () => {
-  try {
-    await fetch('/api/mock-warning', { method: 'POST' });
-    showSettingsMsg('모의 경고를 발생시켰습니다.');
-    pollHistory(true);
-  } catch (e) {
-    showSettingsMsg('요청 실패', true);
-  }
-});
+      function showSettingsMsg(text, isError) {
+        const el = document.getElementById("settingsMsg");
+        el.textContent = text;
+        el.style.color = isError ? "#ff8080" : "#6fd18a";
+        setTimeout(() => {
+          el.textContent = "";
+        }, 3000);
+      }
 
-document.getElementById('clearMockWarningsBtn').addEventListener('click', async () => {
-  if (!confirm('모의 경고 기록을 모두 삭제하시겠습니까?')) return;
-  try {
-    const resp = await fetch('/api/mock-warning/clear', { method: 'POST' });
-    const data = await resp.json();
-    showSettingsMsg(`모의 경고 기록 ${data.removed}건을 삭제했습니다.`);
-    pollHistory(true);
-  } catch (e) {
-    showSettingsMsg('요청 실패', true);
-  }
-});
+      // -- 위험 감지 설정 / 개발자 설정 (서버 /config) --
+      const criticalPressureInput = document.getElementById(
+        "criticalPressureInput",
+      );
+      const criticalTimeInput = document.getElementById("criticalTimeInput");
+      const calibrationInput = document.getElementById("calibrationInput");
+      const rowsInput = document.getElementById("rowsInput");
+      const colsInput = document.getElementById("colsInput");
 
-// -- 서버 재시작 시 복원 대기 중인 설정 확인 팝업 --
-const configPendingOverlay = document.getElementById('configPendingOverlay');
-const configPendingDetail = document.getElementById('configPendingDetail');
+      let currentCalibrationFactor = 1;
 
-function formatPendingDetail(cfg) {
-  const maskCount = (cfg.mask_excluded_idx || []).length;
-  return `위험 압력: ${cfg.critical_pressure} mmHg  |  위험 지속 시간: ${cfg.critical_time} min  |  `
-    + `calibration: ${cfg.calibration_factor}  |  마스크 제외 셀: ${maskCount}개`;
-}
+      async function loadConfig() {
+        try {
+          const resp = await fetch("/config", {
+            headers: { "X-Dashboard-Request": "1" },
+          });
+          const cfg = await resp.json();
+          criticalPressureInput.value = cfg.critical_pressure;
+          criticalTimeInput.value = cfg.critical_time;
+          calibrationInput.value = cfg.calibration_factor;
+          rowsInput.value = cfg.rows;
+          colsInput.value = cfg.cols;
+          currentCalibrationFactor = cfg.calibration_factor;
+          initMaskEditor(cfg.cols, cfg.rows, cfg.mask_excluded_idx || []);
+        } catch (e) {
+          /* ignore */
+        }
+      }
 
-async function checkPendingConfig() {
-  try {
-    const resp = await fetch('/api/config/pending');
-    const data = await resp.json();
-    if (data.pending) {
-      configPendingDetail.textContent = formatPendingDetail(data.config);
-      configPendingOverlay.classList.add('open');
-    }
-  } catch (e) { /* ignore */ }
-}
+      // -- 마스크 설정 (감지 제외 영역, 서버 /config의 mask_excluded_idx) --
+      const maskCanvas = document.getElementById("maskCanvas");
+      const maskCtx = maskCanvas.getContext("2d");
+      const MASK_CELL = 4; // px per grid cell in the (small) mask editor
+      let maskCols = 0,
+        maskRows = 0;
+      let excludedIdx = new Set();
+      let maskPainting = false;
+      let maskPaintValue = true; // true = mark excluded, false = clear
+      let latestPressure = null; // most recent sensor pressure snapshot, for overlay in the mask editor
 
-async function resolvePendingConfig(action) {
-  try {
-    await fetch('/api/config/pending/resolve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
-    });
-  } finally {
-    configPendingOverlay.classList.remove('open');
-    loadConfig();
-  }
-}
+      // Mirrors drawGrid's convention below: the sensor grid is rendered rotated
+      // 90deg CCW from its raw (row, col) layout, so the physical canvas width/
+      // height are swapped (rows drive width, cols drive height) and the same
+      // translate+rotate transform is applied before any fillRect calls, which
+      // stay in raw (col*CELL, row*CELL) space. The mask editor must match this
+      // exactly, or its cols/rows orientation looks flipped relative to the main
+      // grid above and the sensor readings drawn in the background.
+      function drawMaskEditor() {
+        if (!maskCols || !maskRows) return;
+        maskCtx.setTransform(1, 0, 0, 1, 0, 0);
+        maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+        maskCtx.translate(0, maskCanvas.height);
+        maskCtx.rotate(-Math.PI / 2);
 
-document.getElementById('configPendingRestoreBtn').addEventListener('click', () => resolvePendingConfig('restore'));
-document.getElementById('configPendingDefaultBtn').addEventListener('click', () => resolvePendingConfig('default'));
+        if (latestPressure && latestPressure.length === maskCols * maskRows) {
+          for (let i = 0; i < latestPressure.length; i++) {
+            const v = latestPressure[i];
+            const row = Math.floor(i / maskCols),
+              col = i % maskCols;
+            maskCtx.fillStyle = `rgb(${v},${v},${v})`;
+            maskCtx.fillRect(
+              col * MASK_CELL,
+              row * MASK_CELL,
+              MASK_CELL,
+              MASK_CELL,
+            );
+          }
+        } else {
+          maskCtx.fillStyle = "#2a2c30";
+          maskCtx.fillRect(0, 0, maskCols * MASK_CELL, maskRows * MASK_CELL);
+        }
 
-loadConfig();
-loadMeta();
-checkPendingConfig();
+        maskCtx.fillStyle = "rgba(138, 92, 246, 0.65)";
+        for (const idx of excludedIdx) {
+          const row = Math.floor(idx / maskCols),
+            col = idx % maskCols;
+          maskCtx.fillRect(
+            col * MASK_CELL,
+            row * MASK_CELL,
+            MASK_CELL,
+            MASK_CELL,
+          );
+        }
+      }
 
-const canvas = document.getElementById('grid');
-const ctx = canvas.getContext('2d');
-const statusEl = document.getElementById('status');
-const connStatusEl = document.getElementById('connStatus');
-const metaEl = document.getElementById('meta');
-const riskImageEl = document.getElementById('riskImage');
-const imageMetaEl = document.getElementById('imageMeta');
+      function updateMaskEditorPressure(pressure) {
+        if (
+          !pressure ||
+          !maskCols ||
+          !maskRows ||
+          pressure.length !== maskCols * maskRows
+        )
+          return;
+        latestPressure = pressure;
+        drawMaskEditor();
+      }
 
-const CELL = 2.5; // px per grid cell, square (1/4 of the original 10px)
+      function initMaskEditor(cols, rows, excludedList) {
+        maskCols = cols;
+        maskRows = rows;
+        excludedIdx = new Set(excludedList);
+        // Swapped to match the CCW rotation applied in drawMaskEditor (same as
+        // the main grid canvas: width follows rows, height follows cols).
+        maskCanvas.width = rows * MASK_CELL;
+        maskCanvas.height = cols * MASK_CELL;
+        drawMaskEditor();
+      }
 
-// The grid is drawn rotated 90° counter-clockwise from its raw (row, col)
-// layout: fill/render calls below use the raw coordinate space, and a
-// canvas transform (translate + rotate(-90deg)) maps that space onto the
-// visible (swapped-dimension) canvas.
-function drawGrid(data) {
-  const cols = data.cols, rows = data.rows;
-  const rawW = cols * CELL, rawH = rows * CELL;
+      function maskCellFromEvent(e) {
+        const rect = maskCanvas.getBoundingClientRect();
+        const scaleX = maskCanvas.width / rect.width;
+        const scaleY = maskCanvas.height / rect.height;
+        const screenX = (e.clientX - rect.left) * scaleX;
+        const screenY = (e.clientY - rect.top) * scaleY;
+        // Inverse of the translate(0,H)+rotate(-90deg) transform used for drawing.
+        const row = Math.floor(screenX / MASK_CELL);
+        const col = Math.floor((maskCanvas.height - screenY) / MASK_CELL);
+        if (col < 0 || col >= maskCols || row < 0 || row >= maskRows)
+          return null;
+        return row * maskCols + col;
+      }
 
-  // CCW 90 rotation swaps displayed width/height relative to the raw grid.
-  if (canvas.width !== rawH || canvas.height !== rawW) {
-    canvas.width = rawH;
-    canvas.height = rawW;
-  }
+      function paintMaskAt(e) {
+        const idx = maskCellFromEvent(e);
+        if (idx === null) return;
+        if (maskPaintValue) excludedIdx.add(idx);
+        else excludedIdx.delete(idx);
+        drawMaskEditor();
+      }
 
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.translate(0, canvas.height);
-  ctx.rotate(-Math.PI / 2);
+      maskCanvas.addEventListener("pointerdown", (e) => {
+        maskPainting = true;
+        maskPaintValue = !excludedIdx.has(maskCellFromEvent(e));
+        paintMaskAt(e);
+      });
+      maskCanvas.addEventListener("pointermove", (e) => {
+        if (maskPainting) paintMaskAt(e);
+      });
+      window.addEventListener("pointerup", () => {
+        maskPainting = false;
+      });
 
-  const state = data.latest_state;
-  if (state && state.pressure && state.pressure.length === cols * rows) {
-    for (let i = 0; i < state.pressure.length; i++) {
-      const v = state.pressure[i];
-      const row = Math.floor(i / cols), col = i % cols;
-      ctx.fillStyle = `rgb(${v},${v},${v})`;
-      ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
-    }
-  } else if (data.latest_event) {
-    ctx.fillStyle = '#3a3f4a';
-    for (const [row, col] of data.latest_event.pressure_mask_cells) {
-      ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
-    }
-  }
+      document
+        .getElementById("saveMaskBtn")
+        .addEventListener("click", async () => {
+          try {
+            await putConfig({ mask_excluded_idx: Array.from(excludedIdx) });
+            showSettingsMsg("마스크가 저장되었습니다.");
+          } catch (e) {
+            showSettingsMsg("저장 실패", true);
+          }
+        });
 
-  if (data.latest_event) {
-    ctx.fillStyle = '#ff3b3b';
-    for (const [row, col] of data.latest_event.risky_cells) {
-      ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
-    }
-  }
+      document
+        .getElementById("resetMaskBtn")
+        .addEventListener("click", async () => {
+          excludedIdx = new Set();
+          drawMaskEditor();
+          try {
+            await putConfig({ mask_excluded_idx: [] });
+            showSettingsMsg("마스크가 초기화되었습니다.");
+          } catch (e) {
+            showSettingsMsg("저장 실패", true);
+          }
+        });
 
-  if (data.mask_excluded_cells && data.mask_excluded_cells.length) {
-    ctx.fillStyle = 'rgba(138, 92, 246, 0.55)';
-    for (const [row, col] of data.mask_excluded_cells) {
-      ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
-    }
-  }
-}
+      document
+        .getElementById("resetDefaultsBtn")
+        .addEventListener("click", async () => {
+          if (
+            !confirm(
+              "모든 설정을 기본값으로 되돌리시겠습니까? 저장된 마스크와 임계값이 모두 초기화됩니다.",
+            )
+          )
+            return;
+          try {
+            const resp = await fetch("/api/defaults");
+            const d = await resp.json();
+            await putConfig(d);
 
-let lastWarningReceivedAt = null;
-function updateStatus(data) {
-  if (data.has_warning) {
-    statusEl.className = 'warn';
-    statusEl.textContent = '위험 경고';
-    const ev = data.latest_event;
-    if (ev.received_at !== lastWarningReceivedAt) {
-      lastWarningReceivedAt = ev.received_at;
-      playAlertBeep();
-      showWarningPopup(ev);
-    }
-    const receivedAt = new Date(ev.received_at * 1000).toLocaleTimeString('ko-KR');
-    metaEl.textContent =
-      `accumulated_time=${ev.accumulated_time}  |  위험 셀 ${ev.risky_cells.length}개  |  수신 ${receivedAt}`;
-  } else {
-    statusEl.className = 'ok';
-    statusEl.textContent = '정상';
-    metaEl.textContent = '이벤트 없음';
-  }
-}
+            criticalPressureInput.value = d.critical_pressure;
+            criticalTimeInput.value = d.critical_time;
+            calibrationInput.value = d.calibration_factor;
+            rowsInput.value = d.rows;
+            colsInput.value = d.cols;
+            currentCalibrationFactor = d.calibration_factor;
+            initMaskEditor(d.cols, d.rows, d.mask_excluded_idx || []);
 
-let prevConnected = null; // tracks the last known connected value, so the alert fires once per real disconnect transition, not on every poll
-function updateConnStatus(data) {
-  if (data.connected === true) {
-    connStatusEl.className = 'ok';
-    connStatusEl.textContent = '클라이언트 연결됨';
-    connLostOverlay.classList.remove('open');
-  } else if (data.connected === false) {
-    connStatusEl.className = 'warn';
-    const since = data.last_seen ? new Date(data.last_seen * 1000).toLocaleTimeString('ko-KR') : '?';
-    connStatusEl.textContent = `클라이언트 연결 끊김 (마지막 수신 ${since})`;
-    if (prevConnected === true) {
-      playAlertBeep();
-      showConnLostPopup(data.last_seen);
-    }
-  } else {
-    connStatusEl.className = 'unknown';
-    connStatusEl.textContent = '클라이언트 상태 확인 중';
-  }
-  prevConnected = data.connected;
-}
+            POLL_MS = 1500;
+            pollInput.value = POLL_MS;
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(poll, POLL_MS);
 
-function updateImage(data) {
-  if (data.has_image) {
-    riskImageEl.src = '/image/latest?t=' + Date.now();
-    riskImageEl.style.display = 'block';
-    imageMetaEl.style.display = 'block';
-  } else {
-    riskImageEl.style.display = 'none';
-    imageMetaEl.style.display = 'none';
-  }
-}
+            alertVolume = 100;
+            volumeInput.value = alertVolume;
+            volumeValue.textContent = alertVolume;
+            localStorage.setItem("alertVolume", String(alertVolume));
 
-const historyListEl = document.getElementById('historyList');
-const historyEmptyEl = document.getElementById('historyEmpty');
-let lastHistoryCount = -1;
+            alertSoundStyle = "chime";
+            soundStyleInput.value = alertSoundStyle;
+            localStorage.setItem("alertSoundStyle", alertSoundStyle);
 
-function formatPressure(ev) {
-  const p = ev.risky_pressure;
-  if (!p || !p.length) return '-';
-  const avg = p.reduce((a, b) => a + b, 0) / p.length;
-  return `${avg.toFixed(1)} (max ${Math.max(...p).toFixed(1)})`;
-}
+            showSettingsMsg("모든 설정이 기본값으로 초기화되었습니다.");
+          } catch (e) {
+            showSettingsMsg("초기화 실패", true);
+          }
+        });
 
-function renderHistory(history) {
-  if (!history.length) {
-    historyListEl.innerHTML = '';
-    historyEmptyEl.style.display = 'block';
-    lastHistoryCount = 0;
-    return;
-  }
-  historyEmptyEl.style.display = 'none';
-  lastHistoryCount = history.length;
-  historyListEl.innerHTML = history.map(ev => {
-    const t = new Date(ev.received_at * 1000).toLocaleString('ko-KR');
-    const site = ev.site ? ev.site : '미입력';
-    const mockTag = ev.is_mock ? '<span class="historyMockTag">모의</span>' : '';
-    return `<li><span class="historyTime">${t}</span>${mockTag}<br>`
-      + `위험 셀 압력 <span class="historyCells">${formatPressure(ev)}</span>`
-      + `  |  지속 시간 ${ev.accumulated_time}min<br>`
-      + `발생 부위: ${site}</li>`;
-  }).join('');
-}
+      async function loadMeta() {
+        try {
+          const resp = await fetch("/api/meta");
+          const meta = await resp.json();
+          document.getElementById("warningDirValue").textContent =
+            meta.warning_dir;
+          document.getElementById("serverIpValue").textContent =
+            meta.server_ip || "알 수 없음";
+        } catch (e) {
+          document.getElementById("warningDirValue").textContent = "알 수 없음";
+          document.getElementById("serverIpValue").textContent = "알 수 없음";
+        }
+      }
 
-async function pollHistory(force) {
-  try {
-    const resp = await fetch('/api/history');
-    const data = await resp.json();
-    if (force || data.history.length !== lastHistoryCount) {
-      renderHistory(data.history);
-    }
-  } catch (e) { /* ignore */ }
-}
+      async function putConfig(updates) {
+        const resp = await fetch("/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updates),
+        });
+        return resp.json();
+      }
 
-async function poll() {
-  try {
-    const resp = await fetch('/api/latest');
-    const data = await resp.json();
-    drawGrid(data);
-    updateStatus(data);
-    updateConnStatus(data);
-    updateImage(data);
-    if (data.latest_state && data.latest_state.pressure) {
-      updateMaskEditorPressure(data.latest_state.pressure);
-    }
-    if (data.has_warning) pollHistory();
-  } catch (e) {
-    statusEl.className = 'warn';
-    statusEl.textContent = '서버 연결 실패';
-    connStatusEl.className = 'unknown';
-    connStatusEl.textContent = '클라이언트 상태 확인 중';
-  }
-}
+      document
+        .getElementById("saveDetectionBtn")
+        .addEventListener("click", async () => {
+          try {
+            await putConfig({
+              critical_pressure: parseFloat(criticalPressureInput.value),
+              critical_time: parseFloat(criticalTimeInput.value),
+            });
+            showSettingsMsg("위험 감지 설정이 저장되었습니다.");
+          } catch (e) {
+            showSettingsMsg("저장 실패", true);
+          }
+        });
 
-pollHistory();
-poll();
-pollTimer = setInterval(poll, POLL_MS);
-</script>
-</body>
+      document
+        .getElementById("saveDevBtn")
+        .addEventListener("click", async () => {
+          try {
+            await putConfig({
+              calibration_factor: parseFloat(calibrationInput.value),
+              rows: parseInt(rowsInput.value, 10),
+              cols: parseInt(colsInput.value, 10),
+            });
+            showSettingsMsg("개발자 설정이 저장되었습니다.");
+          } catch (e) {
+            showSettingsMsg("저장 실패", true);
+          }
+        });
+
+      document
+        .getElementById("requestStatusBtn")
+        .addEventListener("click", async () => {
+          try {
+            await fetch("/command", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ command: "state" }),
+            });
+            showSettingsMsg("상태 요청을 전송했습니다.");
+          } catch (e) {
+            showSettingsMsg("요청 실패", true);
+          }
+        });
+
+      document
+        .getElementById("mockWarningBtn")
+        .addEventListener("click", async () => {
+          try {
+            await fetch("/api/mock-warning", { method: "POST" });
+            showSettingsMsg("모의 경고를 발생시켰습니다.");
+            pollHistory(true);
+          } catch (e) {
+            showSettingsMsg("요청 실패", true);
+          }
+        });
+
+      document
+        .getElementById("clearMockWarningsBtn")
+        .addEventListener("click", async () => {
+          if (!confirm("모의 경고 기록을 모두 삭제하시겠습니까?")) return;
+          try {
+            const resp = await fetch("/api/mock-warning/clear", {
+              method: "POST",
+            });
+            const data = await resp.json();
+            showSettingsMsg(`모의 경고 기록 ${data.removed}건을 삭제했습니다.`);
+            pollHistory(true);
+          } catch (e) {
+            showSettingsMsg("요청 실패", true);
+          }
+        });
+
+      // -- 서버 재시작 시 복원 대기 중인 설정 확인 팝업 --
+      const configPendingOverlay = document.getElementById(
+        "configPendingOverlay",
+      );
+      const configPendingDetail = document.getElementById(
+        "configPendingDetail",
+      );
+
+      function formatPendingDetail(cfg) {
+        const maskCount = (cfg.mask_excluded_idx || []).length;
+        return (
+          `위험 압력: ${cfg.critical_pressure} mmHg  |  위험 지속 시간: ${cfg.critical_time} min  |  ` +
+          `calibration: ${cfg.calibration_factor}  |  마스크 제외 셀: ${maskCount}개`
+        );
+      }
+
+      async function checkPendingConfig() {
+        try {
+          const resp = await fetch("/api/config/pending");
+          const data = await resp.json();
+          if (data.pending) {
+            configPendingDetail.textContent = formatPendingDetail(data.config);
+            configPendingOverlay.classList.add("open");
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
+      async function resolvePendingConfig(action) {
+        try {
+          await fetch("/api/config/pending/resolve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action }),
+          });
+        } finally {
+          configPendingOverlay.classList.remove("open");
+          loadConfig();
+        }
+      }
+
+      document
+        .getElementById("configPendingRestoreBtn")
+        .addEventListener("click", () => resolvePendingConfig("restore"));
+      document
+        .getElementById("configPendingDefaultBtn")
+        .addEventListener("click", () => resolvePendingConfig("default"));
+
+      loadConfig();
+      loadMeta();
+      checkPendingConfig();
+
+      const canvas = document.getElementById("grid");
+      const ctx = canvas.getContext("2d");
+      const statusEl = document.getElementById("status");
+      const connStatusEl = document.getElementById("connStatus");
+      const metaEl = document.getElementById("meta");
+
+      const CELL = 2.5; // px per grid cell, square (1/4 of the original 10px)
+
+      // The grid is drawn rotated 90° counter-clockwise from its raw (row, col)
+      // layout: fill/render calls below use the raw coordinate space, and a
+      // canvas transform (translate + rotate(-90deg)) maps that space onto the
+      // visible (swapped-dimension) canvas.
+      function drawGrid(data) {
+        const cols = data.cols,
+          rows = data.rows;
+        const rawW = cols * CELL,
+          rawH = rows * CELL;
+
+        // CCW 90 rotation swaps displayed width/height relative to the raw grid.
+        if (canvas.width !== rawH || canvas.height !== rawW) {
+          canvas.width = rawH;
+          canvas.height = rawW;
+        }
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.translate(0, canvas.height);
+        ctx.rotate(-Math.PI / 2);
+
+        const state = data.latest_state;
+        if (state && state.pressure && state.pressure.length === cols * rows) {
+          for (let i = 0; i < state.pressure.length; i++) {
+            const v = state.pressure[i];
+            const row = Math.floor(i / cols),
+              col = i % cols;
+            ctx.fillStyle = `rgb(${v},${v},${v})`;
+            ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
+          }
+        } else if (data.latest_event) {
+          ctx.fillStyle = "#3a3f4a";
+          for (const [row, col] of data.latest_event.pressure_mask_cells) {
+            ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
+          }
+        }
+
+        if (data.latest_event) {
+          ctx.fillStyle = "#ff3b3b";
+          for (const [row, col] of data.latest_event.risky_cells) {
+            ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
+          }
+        }
+
+        if (data.mask_excluded_cells && data.mask_excluded_cells.length) {
+          ctx.fillStyle = "rgba(138, 92, 246, 0.55)";
+          for (const [row, col] of data.mask_excluded_cells) {
+            ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
+          }
+        }
+      }
+
+      let lastWarningReceivedAt = null;
+      function updateStatus(data) {
+        if (data.has_warning) {
+          statusEl.className = "warn";
+          statusEl.textContent = "위험 경고";
+          const ev = data.latest_event;
+          if (ev.received_at !== lastWarningReceivedAt) {
+            lastWarningReceivedAt = ev.received_at;
+            playAlertBeep();
+            showWarningPopup(ev);
+          }
+          const receivedAt = new Date(ev.received_at * 1000).toLocaleTimeString(
+            "ko-KR",
+          );
+          metaEl.textContent = `accumulated_time=${ev.accumulated_time}  |  수신 ${receivedAt}`;
+        } else {
+          statusEl.className = "ok";
+          statusEl.textContent = "서버 연결됨";
+          metaEl.textContent = "이벤트 없음";
+        }
+      }
+
+      let prevConnected = null; // tracks the last known connected value, so the alert fires once per real disconnect transition, not on every poll
+      function updateConnStatus(data) {
+        if (data.connected === true) {
+          connStatusEl.className = "ok";
+          connStatusEl.textContent = "장치 연결됨";
+          connLostOverlay.classList.remove("open");
+        } else if (data.connected === false && !data.last_seen) {
+          connStatusEl.className = "unknown";
+          connStatusEl.textContent = "장치 상태 확인 중";
+        } else if (data.connected === false) {
+          connStatusEl.className = "warn";
+          const since = new Date(data.last_seen * 1000).toLocaleTimeString(
+            "ko-KR",
+          );
+          connStatusEl.textContent = `장치 연결 끊김 (마지막 수신 ${since})`;
+          if (prevConnected === true) {
+            playAlertBeep();
+            showConnLostPopup(data.last_seen);
+          }
+        } else {
+          connStatusEl.className = "unknown";
+          connStatusEl.textContent = "장치 상태 확인 중";
+        }
+        prevConnected = data.connected;
+      }
+
+      const historyListEl = document.getElementById("historyList");
+      const historyEmptyEl = document.getElementById("historyEmpty");
+      let lastHistoryCount = -1;
+      let currentHistory = [];
+
+      function formatPressure(ev) {
+        const raw = ev.risky_pressure;
+        if (!raw || !raw.length) return "-";
+        const p = raw.map((v) => v * currentCalibrationFactor);
+        const avg = p.reduce((a, b) => a + b, 0) / p.length;
+        return `평균 ${avg.toFixed(1)} mmHg 최대 ${Math.max(...p).toFixed(1)} mmHg`;
+      }
+
+      function renderHistory(history) {
+        currentHistory = history;
+        if (!history.length) {
+          historyListEl.innerHTML = "";
+          historyEmptyEl.style.display = "block";
+          lastHistoryCount = 0;
+          return;
+        }
+        historyEmptyEl.style.display = "none";
+        lastHistoryCount = history.length;
+        historyListEl.innerHTML = history
+          .map((ev, i) => {
+            const t = new Date(ev.received_at * 1000).toLocaleString("ko-KR");
+            const site = ev.site ? ev.site : "미입력";
+            const mockTag = ev.is_mock
+              ? '<span class="historyMockTag">모의</span>'
+              : "";
+            return (
+              `<li data-index="${i}"><span class="historyTime">${t}</span>${mockTag}<br>` +
+              `위험 영역 압력 <span class="historyCells">${formatPressure(ev)}</span>` +
+              `  |  지속 시간 ${ev.accumulated_time}min<br>` +
+              `발생 부위: ${site}</li>`
+            );
+          })
+          .join("");
+      }
+
+      const historyDetailOverlay = document.getElementById(
+        "historyDetailOverlay",
+      );
+      const historyDetailMeta = document.getElementById("historyDetailMeta");
+      const historyDetailImage = document.getElementById("historyDetailImage");
+      const historyDetailNoImage = document.getElementById(
+        "historyDetailNoImage",
+      );
+      const historyDetailSiteInput = document.getElementById(
+        "historyDetailSiteInput",
+      );
+      let currentHistoryDetail = null;
+
+      function openHistoryDetail(ev) {
+        currentHistoryDetail = ev;
+        const t = new Date(ev.received_at * 1000).toLocaleString("ko-KR");
+        const mockPrefix = ev.is_mock ? "[모의] " : "";
+        historyDetailMeta.textContent = `${mockPrefix}${t}  |  위험 영역 압력 ${formatPressure(ev)}  |  지속 시간 ${ev.accumulated_time}min`;
+        historyDetailSiteInput.value = ev.site || "";
+        historyDetailImage.style.display = "none";
+        historyDetailNoImage.style.display = "none";
+        const imgUrl = `/api/history/image/${ev.received_at}${ev.is_mock ? "?mock=1" : ""}`;
+        historyDetailImage.onload = () => {
+          historyDetailImage.style.display = "block";
+        };
+        historyDetailImage.onerror = () => {
+          historyDetailNoImage.style.display = "block";
+        };
+        historyDetailImage.src = imgUrl;
+        historyDetailOverlay.classList.add("open");
+      }
+
+      historyListEl.addEventListener("click", (e) => {
+        const li = e.target.closest("li[data-index]");
+        if (!li) return;
+        const ev = currentHistory[parseInt(li.dataset.index, 10)];
+        if (ev) openHistoryDetail(ev);
+      });
+
+      document
+        .getElementById("historyDetailCloseBtn")
+        .addEventListener("click", () => {
+          historyDetailOverlay.classList.remove("open");
+        });
+
+      document
+        .getElementById("historyDetailSaveBtn")
+        .addEventListener("click", async () => {
+          if (!currentHistoryDetail) return;
+          const site = historyDetailSiteInput.value.trim();
+          try {
+            await fetch("/api/history/site", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                received_at: currentHistoryDetail.received_at,
+                site,
+              }),
+            });
+          } catch (e) {
+            /* ignore */
+          }
+          historyDetailOverlay.classList.remove("open");
+          pollHistory(true);
+        });
+
+      async function pollHistory(force) {
+        try {
+          const resp = await fetch("/api/history");
+          const data = await resp.json();
+          if (force || data.history.length !== lastHistoryCount) {
+            renderHistory(data.history);
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
+      async function poll() {
+        try {
+          const resp = await fetch("/api/latest");
+          const data = await resp.json();
+          drawGrid(data);
+          updateStatus(data);
+          updateConnStatus(data);
+          if (data.latest_state && data.latest_state.pressure) {
+            updateMaskEditorPressure(data.latest_state.pressure);
+          }
+          if (data.has_warning) pollHistory();
+        } catch (e) {
+          statusEl.className = "warn";
+          statusEl.textContent = "서버 연결 실패";
+          connStatusEl.className = "unknown";
+          connStatusEl.textContent = "장치 상태 확인 중";
+        }
+      }
+
+      pollHistory();
+      poll();
+      pollTimer = setInterval(poll, POLL_MS);
+    </script>
+  </body>
 </html>

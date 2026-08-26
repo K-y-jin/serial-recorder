@@ -60,6 +60,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
 
+from client.image import render_risk_image
 from server.alert import fire_alert
 from server.config_store import ConfigStore
 from server.connection_monitor import DEFAULT_TIMEOUT_S as DEFAULT_CLIENT_TIMEOUT_S
@@ -85,6 +86,31 @@ def _load_mock_warning_data():
         return json.load(fh)
 
 
+_APP_LOG_HANDLER_MARKER = "_bliss_app_log_handler"
+
+
+def _configure_app_log_file(warning_dir):
+    """Routes every "server.*" logger (app.py, connection_monitor.py,
+    warning_store.py, ...) into <warning_dir>/app.log, in addition to the
+    console -- a running record of client connect/disconnect times,
+    START/PAUSE/STOP commands, and config changes, independent of
+    warnings.log (which only holds risk-warning events).
+    Re-running create_app (e.g. once per test) replaces the previous
+    handler instead of stacking a new one on the shared "server" logger."""
+    logger = logging.getLogger("server")
+    logger.setLevel(logging.INFO)
+    for h in list(logger.handlers):
+        if getattr(h, _APP_LOG_HANDLER_MARKER, False):
+            logger.removeHandler(h)
+            h.close()
+    log_path = Path(warning_dir) / "app.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    setattr(handler, _APP_LOG_HANDLER_MARKER, True)
+    logger.addHandler(handler)
+
+
 def _template_folder():
     """Resolve the templates/ dir both when run normally and when frozen
     into a PyInstaller exe, where files live under sys._MEIPASS instead
@@ -99,6 +125,7 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
                 client_timeout_s=DEFAULT_CLIENT_TIMEOUT_S):
     app = Flask(__name__, template_folder=_template_folder())
     app.logger.setLevel(logging.INFO)
+    _configure_app_log_file(warning_dir)
     state = state or ServerState()
     warning_store = WarningStore(warning_dir)
     config_store = ConfigStore(warning_dir)
@@ -214,11 +241,15 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
             "pressure_mask_idx": pressure_mask_idx,
         }
         received_at = _handle_event(data, log_prefix="MOCK EVENT", is_mock=True)
+        image_bytes = render_risk_image(pressure, mock["rows"], mock["cols"], risky_idx)
+        warning_store.save_image(image_bytes, received_at, is_mock=True)
+        warning_store.save_status(pressure, mock["cols"], mock["rows"], received_at, is_mock=True)
         return jsonify({"status": "ok", "received_at": received_at}), 200
 
     @app.post("/api/mock-warning/clear")
     def clear_mock_warnings():
         removed = warning_store.clear_mock_events()
+        state.clear_mock_latest_event()
         app.logger.info("mock warnings cleared -> %d removed", removed)
         return jsonify({"status": "ok", "removed": removed}), 200
 
@@ -245,6 +276,15 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
             data.get("timestamp"),
             len(data.get("pressure", [])),
         )
+        pressure = data.get("pressure")
+        config = state.get_config()
+        if pressure and len(pressure) == config["cols"] * config["rows"]:
+            received_at = time.time()
+            image_bytes = render_risk_image(pressure, config["rows"], config["cols"], [])
+            warning_store.save_image(image_bytes, received_at, is_status=True)
+            warning_store.save_status(
+                pressure, config["cols"], config["rows"], received_at, is_status=True
+            )
         return jsonify({"status": "ok"}), 200
 
     @app.post("/image")
@@ -258,6 +298,12 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
         received_at = time.time()
         saved_path = warning_store.save_image(image_bytes, received_at)
         app.logger.info("IMAGE received (%d bytes) -> %s", len(image_bytes), saved_path)
+        latest_state = state.get_latest_state()
+        if latest_state and latest_state.get("pressure"):
+            config = state.get_config()
+            warning_store.save_status(
+                latest_state["pressure"], config["cols"], config["rows"], received_at
+            )
         return jsonify({"status": "ok", "received_at": received_at}), 200
 
     @app.get("/image/latest")
@@ -294,6 +340,20 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
         for record in records:
             record["risky_cells"] = idx_to_rowcol(record.get("risky_idx", []), cols)
         return jsonify({"history": records})
+
+    @app.get("/api/history/image/<received_at>")
+    def api_history_image(received_at):
+        try:
+            received_at = float(received_at)
+        except ValueError:
+            return jsonify({"status": "error", "message": "invalid received_at"}), 400
+        is_mock = request.args.get("mock") == "1"
+        prefix = "mock_" if is_mock else ""
+        filename = f"{prefix}{received_at:.6f}.png"
+        path = warning_store.image_dir / filename
+        if not path.exists():
+            return jsonify({"status": "error", "message": "no image for this warning"}), 404
+        return send_file(str(path), mimetype="image/png")
 
     @app.post("/api/history/site")
     def api_history_site():

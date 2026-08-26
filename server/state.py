@@ -65,11 +65,29 @@ class ServerState:
             self.event_history.append(record)
         return record
 
+    def clear_mock_latest_event(self):
+        """Drops mock-tagged records from event_history, and un-sticks
+        latest_event if it's currently showing a mock warning -- so the
+        dashboard canvas stops rendering a mock event's risky cells after
+        "모의 경고 삭제" instead of redrawing the same stale picture on
+        every poll until the next real event arrives."""
+        with self._lock:
+            self.event_history = deque(
+                (r for r in self.event_history if not r.get("is_mock")),
+                maxlen=EVENT_HISTORY_MAXLEN,
+            )
+            if self.latest_event and self.latest_event.get("is_mock"):
+                self.latest_event = self.event_history[-1] if self.event_history else None
+
     def record_state(self, payload):
         with self._lock:
             self.latest_state = dict(payload)
             self.state_reports.append(dict(payload))
         return self.latest_state
+
+    def get_latest_state(self):
+        with self._lock:
+            return dict(self.latest_state) if self.latest_state else None
 
     def record_image(self, image_bytes):
         with self._lock:
