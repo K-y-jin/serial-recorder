@@ -9,6 +9,13 @@
 
 ### 서버 PC (Windows)
 
+0. 설치 (빌드 + 배포)
+   ```
+   git clone <repo-url> pressure_recorder
+   cd pressure_recorder
+   build_windows.bat
+   ```
+   PyInstaller로 빌드 후 `%USERPROFILE%\pressure-server`에 배포하고 방화벽 규칙을 등록합니다.
 1. 서버 앱 시작
    ```
    dist\pressure-server\pressure-server.exe
@@ -21,6 +28,14 @@
 
 ### 클라이언트 PC (라즈베리파이)
 
+0. 설치
+   ```bash
+   git clone <repo-url> pressure_recorder
+   cd pressure_recorder
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
 1. 라즈베리파이에 SSH 접속
 2. 서버 IP 설정
    ```bash
