@@ -108,7 +108,7 @@ def _get_local_ip():
             return None
 
 
-_APP_LOG_HANDLER_MARKER = "_bliss_app_log_handler"
+_APP_LOG_HANDLER_MARKER = "_pressure_app_log_handler"
 
 
 def _configure_app_log_file(warning_dir):

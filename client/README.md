@@ -34,7 +34,7 @@
 
 ```bash
 python -m client.main --dry-run --server-url http://localhost:5000 \
-    --warning-log-dir /var/log/bliss/client_warnings
+    --warning-log-dir /var/log/pressure/client_warnings
 ```
 
 ## 서버 명령 (start / pause / stop / reset / state)
@@ -98,7 +98,7 @@ pytest client/tests -v
 
 ## systemd 배치 예시
 
-`/etc/systemd/system/bliss-client.service`:
+`/etc/systemd/system/pressure-client.service`:
 
 ```ini
 [Unit]
@@ -108,7 +108,7 @@ After=network-online.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/bliss_recorder
+WorkingDirectory=/home/pi/pressure_recorder
 ExecStart=/usr/bin/python3 -m client.main --port /dev/ttyUSB0 --server-url http://SERVER_HOST:5000
 Restart=on-failure
 RestartSec=5

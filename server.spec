@@ -4,7 +4,7 @@
 # installed):
 #     pyinstaller server.spec
 #
-# Produces dist/bliss-server/bliss-server.exe (onedir build -- safer than
+# Produces dist/pressure-server/pressure-server.exe (onedir build -- safer than
 # onefile for a Flask app since template/static files stay on disk next to
 # the exe and load fast).
 import sys
@@ -33,7 +33,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="bliss-server",
+    name="pressure-server",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -52,5 +52,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="bliss-server",
+    name="pressure-server",
 )

@@ -6,7 +6,7 @@ pip install -r server\requirements-build.txt || goto :error
 pyinstaller server.spec --noconfirm || goto :error
 
 echo.
-echo Build complete: dist\bliss-server\bliss-server.exe
+echo Build complete: dist\pressure-server\pressure-server.exe
 goto :eof
 
 :error

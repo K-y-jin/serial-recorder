@@ -62,7 +62,7 @@ python -m server.app --port 5000 --client-timeout 15
 `<warning-dir>`은 기본 `warnings/` (서버 실행 cwd 기준), `--warning-dir`로 변경 가능:
 
 ```bash
-python -m server.app --port 5000 --warning-dir /var/log/bliss/warnings
+python -m server.app --port 5000 --warning-dir /var/log/pressure/warnings
 ```
 
 ## 위험 경고 알림
@@ -111,12 +111,12 @@ pip install -r server\requirements-build.txt
 pyinstaller server.spec --noconfirm
 ```
 
-빌드 결과는 `dist\bliss-server\bliss-server.exe` (onedir 빌드 — 템플릿 등 부속
+빌드 결과는 `dist\pressure-server\pressure-server.exe` (onedir 빌드 — 템플릿 등 부속
 파일이 exe 옆에 그대로 남아 있어 onefile보다 실행이 빠르다). 실행 시 기존과
 동일한 CLI 인자를 사용한다:
 
 ```bat
-dist\bliss-server\bliss-server.exe --port 5000 --cols 32 --rows 64
+dist\pressure-server\pressure-server.exe --port 5000 --cols 32 --rows 64
 ```
 
 빌드 구성 파일: `server.spec` (PyInstaller spec, `server/templates`를

@@ -11,7 +11,7 @@
 
 1. 서버 앱 시작
    ```
-   dist\bliss-server\bliss-server.exe
+   dist\pressure-server\pressure-server.exe
    ```
    (또는 소스에서: `python -m server.app`)
 2. 브라우저로 대시보드 접속: `http://localhost:5000/dashboard`
@@ -46,11 +46,11 @@
 
 ### CLI ([cmd/](cmd/))
 
-| 스크립트                                   | 용도                                                 |
-| ------------------------------------------ | ---------------------------------------------------- |
-| [cmd/start.py](cmd/start.py)               | 헤드리스 녹화 (선택적 wandb 업로드, 날짜 기반 회전)  |
-| [cmd/display.py](cmd/display.py)           | 저장된 CSV를 matplotlib 애니메이션으로 재생          |
-| [cmd/calibration.py](cmd/calibration.py)   | baseline 프레임을 측정해 CSV로 저장                  |
+| 스크립트                                 | 용도                                                |
+| ---------------------------------------- | --------------------------------------------------- |
+| [cmd/start.py](cmd/start.py)             | 헤드리스 녹화 (선택적 wandb 업로드, 날짜 기반 회전) |
+| [cmd/display.py](cmd/display.py)         | 저장된 CSV를 matplotlib 애니메이션으로 재생         |
+| [cmd/calibration.py](cmd/calibration.py) | baseline 프레임을 측정해 CSV로 저장                 |
 
 자세한 사용법은 [cmd/README.md](cmd/README.md) 참고.
 
