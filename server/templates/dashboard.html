@@ -347,6 +347,16 @@
       <input type="range" id="volumeInput" min="0" max="100" step="1">
     </div>
     <div class="field">
+      <label for="soundStyleInput">알림 소리 종류</label>
+      <select id="soundStyleInput">
+        <option value="beep">비프음 (짧은 단음)</option>
+        <option value="double">더블 비프 (두 번 울림)</option>
+        <option value="chime">차임벨 (띠리링)</option>
+        <option value="siren">사이렌 (오르내림, 긴 경고음)</option>
+      </select>
+      <button type="button" id="soundTestBtn" class="settingsActionBtn">소리 테스트</button>
+    </div>
+    <div class="field">
       <label>데이터 저장 경로</label>
       <div id="warningDirValue" class="readOnlyValue">불러오는 중...</div>
     </div>
@@ -470,6 +480,16 @@ volumeInput.addEventListener('input', () => {
   localStorage.setItem('alertVolume', String(alertVolume));
 });
 
+const soundStyleInput = document.getElementById('soundStyleInput');
+const soundTestBtn = document.getElementById('soundTestBtn');
+let alertSoundStyle = localStorage.getItem('alertSoundStyle') ?? 'siren';
+soundStyleInput.value = alertSoundStyle;
+soundStyleInput.addEventListener('change', () => {
+  alertSoundStyle = soundStyleInput.value;
+  localStorage.setItem('alertSoundStyle', alertSoundStyle);
+});
+soundTestBtn.addEventListener('click', () => playAlertBeep());
+
 const warningOverlay = document.getElementById('warningOverlay');
 const warningModalText = document.getElementById('warningModalText');
 const warningSiteInput = document.getElementById('warningSiteInput');
@@ -516,15 +536,45 @@ function playAlertBeep() {
   if (alertVolume <= 0) return;
   try {
     const ctxA = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctxA.createOscillator();
-    const gain = ctxA.createGain();
-    osc.frequency.value = 880;
-    gain.gain.value = (alertVolume / 100) * 0.2;
-    osc.connect(gain);
-    gain.connect(ctxA.destination);
-    osc.start();
-    osc.stop(ctxA.currentTime + 0.25);
-    osc.onended = () => ctxA.close();
+    const peak = (alertVolume / 100) * 0.2;
+
+    function tone(freq, startAt, duration, glideTo) {
+      const osc = ctxA.createOscillator();
+      const gain = ctxA.createGain();
+      osc.frequency.setValueAtTime(freq, ctxA.currentTime + startAt);
+      if (glideTo) {
+        osc.frequency.linearRampToValueAtTime(glideTo, ctxA.currentTime + startAt + duration);
+      }
+      gain.gain.setValueAtTime(0, ctxA.currentTime + startAt);
+      gain.gain.linearRampToValueAtTime(peak, ctxA.currentTime + startAt + 0.02);
+      gain.gain.setValueAtTime(peak, ctxA.currentTime + startAt + duration - 0.03);
+      gain.gain.linearRampToValueAtTime(0, ctxA.currentTime + startAt + duration);
+      osc.connect(gain);
+      gain.connect(ctxA.destination);
+      osc.start(ctxA.currentTime + startAt);
+      osc.stop(ctxA.currentTime + startAt + duration + 0.02);
+      return startAt + duration;
+    }
+
+    let endAt;
+    switch (alertSoundStyle) {
+      case 'double':
+        tone(880, 0, 0.2);
+        endAt = tone(880, 0.35, 0.2);
+        break;
+      case 'chime':
+        tone(1046.5, 0, 0.35);
+        endAt = tone(1318.5, 0.3, 0.5);
+        break;
+      case 'siren':
+        endAt = tone(600, 0, 1.6, 1100);
+        break;
+      case 'beep':
+      default:
+        endAt = tone(880, 0, 0.6);
+        break;
+    }
+    setTimeout(() => ctxA.close(), (endAt + 0.1) * 1000);
   } catch (e) { /* ignore */ }
 }
 
@@ -689,6 +739,10 @@ document.getElementById('resetDefaultsBtn').addEventListener('click', async () =
     volumeInput.value = alertVolume;
     volumeValue.textContent = alertVolume;
     localStorage.setItem('alertVolume', String(alertVolume));
+
+    alertSoundStyle = 'siren';
+    soundStyleInput.value = alertSoundStyle;
+    localStorage.setItem('alertSoundStyle', alertSoundStyle);
 
     showSettingsMsg('모든 설정이 기본값으로 초기화되었습니다.');
   } catch (e) {

@@ -41,7 +41,8 @@ client가 서버에 실제로 요청을 보내는 엔드포인트(`GET /config`,
 - 연결 상태는 `/api/latest`의 `connected`(true/false/null)·`last_seen`으로 노출되고
   대시보드 상단 배지에 실시간 반영됨
 - 연결이 끊기는 순간, 그리고 다시 연결되는 순간 각각 한 번씩
-  `server/alert.py:fire_alert()`로 알림 (Windows: 비프음 + 팝업, 그 외: 로그)
+  `server/alert.py:fire_alert()`로 로그를 남기고, 대시보드가 열려 있으면
+  대시보드가 팝업 + 알림음을 띄운다
   — 상태가 유지되는 동안 반복 알림은 발생하지 않음
 - 서버가 처음 켜져서 client가 아직 한 번도 접속하지 않은 상태는 `connected: null`
   (알 수 없음)로 표시되며 알림도 발생하지 않음
@@ -67,11 +68,11 @@ python -m server.app --port 5000 --warning-dir /var/log/bliss/warnings
 ## 위험 경고 알림
 
 `POST /event`로 client의 위험 경고(risky_idx가 있는 이벤트)를 받으면
-`server/alert.py:fire_alert()`가 실행된다:
-
-- Windows에서는 시스템 비프음(`winsound.MessageBeep`) + 항상 위에 뜨는 팝업
-  메시지박스(`MessageBoxW`)를 별도 스레드에서 띄운다 (요청 처리를 막지 않음)
-- Windows가 아닌 환경(Linux/mac, 테스트)에서는 팝업 대신 로그로만 남긴다
+`server/alert.py:fire_alert()`가 실행되어 로그를 남긴다. 실제 사용자에게
+보이는 알림음/팝업은 서버 프로세스가 아니라 대시보드(브라우저)가 담당한다
+(`server/templates/dashboard.html:playAlertBeep()` / `showWarningPopup()`)
+— 알림 소리 크기·종류는 대시보드 설정에서 조절 가능하며 OS나 브라우저와
+무관하게 항상 동일하게 재생된다.
 
 ## 실행
 
