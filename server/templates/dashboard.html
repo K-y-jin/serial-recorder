@@ -287,6 +287,17 @@
   #historyList li:last-child { border-bottom: none; }
   #historyList .historyTime { color: #e6e6e6; font-weight: 600; }
   #historyList .historyCells { color: #ff8080; }
+  #historyList .historyMockTag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #1a1a1a;
+    background: #f5c518;
+    border-radius: 3px;
+    vertical-align: middle;
+  }
   #historyEmpty { font-size: 12px; color: #a0a4ab; }
 </style>
 </head>
@@ -361,6 +372,9 @@
     </div>
     <div class="field">
       <button id="mockWarningBtn" class="settingsActionBtn">모의 경고 발생</button>
+    </div>
+    <div class="field">
+      <button id="clearMockWarningsBtn" class="settingsActionBtn" style="border-color:#ff3b3b; color:#ff8080;">모의 경고 기록 지우기</button>
     </div>
     <div id="settingsMsg" class="settingsMsg"></div>
   </div>
@@ -478,8 +492,9 @@ document.getElementById('warningModalCloseBtn').addEventListener('click', async 
 
 function showWarningPopup(ev) {
   const receivedAt = new Date(ev.received_at * 1000).toLocaleTimeString('ko-KR');
+  const mockPrefix = ev.is_mock ? '[모의] ' : '';
   warningModalText.textContent =
-    `위험 셀 ${ev.risky_cells.length}개가 감지되었습니다. (수신 ${receivedAt})`;
+    `${mockPrefix}위험 셀 ${ev.risky_cells.length}개가 감지되었습니다. (수신 ${receivedAt})`;
   pendingWarningReceivedAt = ev.received_at;
   warningSiteInput.value = '';
   warningOverlay.classList.add('open');
@@ -742,6 +757,19 @@ document.getElementById('mockWarningBtn').addEventListener('click', async () => 
   try {
     await fetch('/api/mock-warning', { method: 'POST' });
     showSettingsMsg('모의 경고를 발생시켰습니다.');
+    pollHistory(true);
+  } catch (e) {
+    showSettingsMsg('요청 실패', true);
+  }
+});
+
+document.getElementById('clearMockWarningsBtn').addEventListener('click', async () => {
+  if (!confirm('모의 경고 기록을 모두 삭제하시겠습니까?')) return;
+  try {
+    const resp = await fetch('/api/mock-warning/clear', { method: 'POST' });
+    const data = await resp.json();
+    showSettingsMsg(`모의 경고 기록 ${data.removed}건을 삭제했습니다.`);
+    pollHistory(true);
   } catch (e) {
     showSettingsMsg('요청 실패', true);
   }
@@ -923,7 +951,8 @@ function renderHistory(history) {
   historyListEl.innerHTML = history.map(ev => {
     const t = new Date(ev.received_at * 1000).toLocaleString('ko-KR');
     const site = ev.site ? ev.site : '미입력';
-    return `<li><span class="historyTime">${t}</span><br>`
+    const mockTag = ev.is_mock ? '<span class="historyMockTag">모의</span>' : '';
+    return `<li><span class="historyTime">${t}</span>${mockTag}<br>`
       + `위험 셀 압력 <span class="historyCells">${formatPressure(ev)}</span>`
       + `  |  지속 시간 ${ev.accumulated_time}min<br>`
       + `발생 부위: ${site}</li>`;

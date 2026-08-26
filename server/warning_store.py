@@ -98,6 +98,36 @@ class WarningStore:
                     f.writelines(new_lines)
         return found
 
+    def clear_mock_events(self):
+        """Removes all mock-warning records (is_mock=True) from
+        warnings.log, keeping real client warnings intact. Returns the
+        number of records removed."""
+        with self._lock:
+            if not self.log_path.exists():
+                return 0
+            with open(self.log_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            kept_lines = []
+            removed = 0
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    kept_lines.append(line)
+                    continue
+                try:
+                    record = json.loads(stripped)
+                except ValueError:
+                    kept_lines.append(line)
+                    continue
+                if record.get("is_mock"):
+                    removed += 1
+                else:
+                    kept_lines.append(line)
+            if removed:
+                with open(self.log_path, "w", encoding="utf-8") as f:
+                    f.writelines(kept_lines)
+        return removed
+
     def save_image(self, image_bytes, received_at):
         """Saves a warning snapshot PNG (POST /image), named by its
         received timestamp so it can be matched up with warnings.log."""

@@ -99,6 +99,30 @@ def test_event_is_logged_to_warnings_file(client, tmp_path):
     assert "received_at" in record
 
 
+def test_mock_warning_is_tagged_and_clearable(client, tmp_path):
+    client.post("/event", json={
+        "accumulated_time": 90.0,
+        "risky_idx": [0, 5],
+        "pressure_mask_idx": [0, 1, 5, 6],
+    })
+    client.post("/api/mock-warning")
+
+    log_path = tmp_path / "warnings" / "warnings.log"
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    records = [json.loads(line) for line in lines]
+    assert records[0].get("is_mock") is not True
+    assert records[1]["is_mock"] is True
+
+    resp = client.post("/api/mock-warning/clear")
+    assert resp.status_code == 200
+    assert resp.get_json()["removed"] == 1
+
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0]).get("is_mock") is not True
+
+
 def test_image_is_saved_to_warnings_dir(client, tmp_path):
     resp = client.post(
         "/image",

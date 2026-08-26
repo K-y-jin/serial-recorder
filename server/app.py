@@ -166,7 +166,9 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
         snapshot = _apply_config(body, "updated")
         return jsonify(snapshot)
 
-    def _handle_event(data, log_prefix="EVENT"):
+    def _handle_event(data, log_prefix="EVENT", is_mock=False):
+        if is_mock:
+            data = dict(data, is_mock=True)
         record = state.record_event(data)
         app.logger.info(
             "%s accumulated_time=%s risky_idx=%s pressure_mask_idx=%d cells",
@@ -211,8 +213,14 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
             "risky_pressure": [pressure[i] for i in risky_idx],
             "pressure_mask_idx": pressure_mask_idx,
         }
-        received_at = _handle_event(data, log_prefix="MOCK EVENT")
+        received_at = _handle_event(data, log_prefix="MOCK EVENT", is_mock=True)
         return jsonify({"status": "ok", "received_at": received_at}), 200
+
+    @app.post("/api/mock-warning/clear")
+    def clear_mock_warnings():
+        removed = warning_store.clear_mock_events()
+        app.logger.info("mock warnings cleared -> %d removed", removed)
+        return jsonify({"status": "ok", "removed": removed}), 200
 
     @app.get("/command")
     def get_command():
