@@ -6,7 +6,7 @@ import threading
 import time
 from collections import deque
 
-DEFAULT_CALIBRATION_FACTOR = 0.5
+DEFAULT_CALIBRATION_FACTOR = 0.4755
 DEFAULT_CRITICAL_PRESSURE = 32.0
 DEFAULT_CRITICAL_TIME = 90.0
 DEFAULT_COLS = 32
@@ -27,6 +27,7 @@ class ServerState:
             "calibration_factor": calibration_factor,
             "critical_pressure": critical_pressure,
             "critical_time": critical_time,
+            "mask_excluded_idx": [],  # flat cell indices excluded from detection; empty = whole grid detected
         }
         self.pending_command = None
         self.latest_event = None
@@ -107,6 +108,7 @@ class ServerState:
             return {
                 "cols": self.config["cols"],
                 "rows": self.config["rows"],
+                "mask_excluded_idx": list(self.config["mask_excluded_idx"]),
                 "latest_event": dict(self.latest_event) if self.latest_event else None,
                 "latest_state": dict(self.latest_state) if self.latest_state else None,
                 "has_image": self.latest_image is not None,

@@ -5,13 +5,13 @@ from client.config import RuntimeConfig
 
 def test_get_returns_initial_defaults():
     rc = RuntimeConfig(calibration_factor=0.5, critical_pressure=32.0, critical_time=90.0)
-    assert rc.get() == (0.5, 32.0, 90.0)
+    assert rc.get() == (0.5, 32.0, 90.0, None)
 
 
 def test_update_replaces_snapshot_atomically():
     rc = RuntimeConfig()
     rc.update(0.8, 40.0, 60.0)
-    assert rc.get() == (0.8, 40.0, 60.0)
+    assert rc.get() == (0.8, 40.0, 60.0, None)
 
 
 def test_concurrent_update_and_get_never_raises_or_tears():
@@ -26,7 +26,7 @@ def test_concurrent_update_and_get_never_raises_or_tears():
     def reader():
         while not stop.is_set():
             try:
-                a, b, c = rc.get()
+                a, b, c, _mask = rc.get()
                 # A torn read would show up as fields from different writers.
                 if not (a == b == c):
                     errors.append((a, b, c))

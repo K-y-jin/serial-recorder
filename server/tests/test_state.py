@@ -16,7 +16,7 @@ def make_clock(start=1000.0):
 def test_default_config():
     state = ServerState()
     cfg = state.get_config()
-    assert cfg["calibration_factor"] == 0.5
+    assert cfg["calibration_factor"] == 0.4755
     assert cfg["critical_pressure"] == 32.0
     assert cfg["critical_time"] == 90.0
     assert cfg["cols"] == 32
@@ -27,7 +27,7 @@ def test_update_config_merges():
     state = ServerState()
     updated = state.update_config({"critical_time": 45.0})
     assert updated["critical_time"] == 45.0
-    assert updated["calibration_factor"] == 0.5  # untouched
+    assert updated["calibration_factor"] == 0.4755  # untouched
 
 
 def test_command_is_consumed_once():

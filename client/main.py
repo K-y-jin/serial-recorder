@@ -156,7 +156,8 @@ class ClientApp:
 
         self.poller = ConfigPoller(
             args.server_url, args.config_path, args.poll_interval,
-            self.runtime_config, timeout_s=args.http_timeout, on_status=self.on_poll_status,
+            self.runtime_config, timeout_s=args.http_timeout, n_cells=n_cells,
+            on_status=self.on_poll_status,
         )
         self.command_poller = CommandPoller(
             args.server_url, args.command_path, args.command_poll_interval,
@@ -190,8 +191,10 @@ class ClientApp:
         if not self.monitor.is_active():
             return
 
-        calib, crit_p, crit_t = self.runtime_config.get()
-        fired_idx, _risk_mask = self.risk_acc.update(pressure_vector, calib, crit_p, crit_t)
+        calib, crit_p, crit_t, detection_mask = self.runtime_config.get()
+        fired_idx, _risk_mask = self.risk_acc.update(
+            pressure_vector, calib, crit_p, crit_t, detection_mask=detection_mask
+        )
         if fired_idx.size == 0:
             return
         pressure_mask_idx = np.nonzero(
@@ -200,6 +203,7 @@ class ClientApp:
         event_payload = {
             "accumulated_time": crit_t,
             "risky_idx": fired_idx.tolist(),
+            "risky_pressure": pressure_vector[fired_idx].tolist(),
             "pressure_mask_idx": pressure_mask_idx.tolist(),
         }
         # Logged immediately, independent of whether the send below

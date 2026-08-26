@@ -7,6 +7,8 @@ import time
 
 import requests
 
+from client.config import build_detection_mask
+
 
 class ConfigPoller:
     """Periodically GETs the server config and pushes it into RuntimeConfig.
@@ -17,10 +19,11 @@ class ConfigPoller:
     """
 
     def __init__(self, base_url, config_path, interval_s, runtime_config,
-                 timeout_s=5.0, on_status=None, session=None):
+                 timeout_s=5.0, n_cells=None, on_status=None, session=None):
         self.url = base_url.rstrip("/") + config_path
         self.interval_s = interval_s
         self.runtime_config = runtime_config
+        self.n_cells = n_cells
         self.timeout_s = timeout_s
         self.on_status = on_status or (lambda ok, msg: None)
         self.session = session or requests.Session()
@@ -42,10 +45,16 @@ class ConfigPoller:
         resp = self.session.get(self.url, timeout=self.timeout_s)
         resp.raise_for_status()
         data = resp.json()
+        detection_mask = None
+        if self.n_cells is not None:
+            detection_mask = build_detection_mask(
+                self.n_cells, data.get("mask_excluded_idx", [])
+            )
         self.runtime_config.update(
             float(data["calibration_factor"]),
             float(data["critical_pressure"]),
             float(data["critical_time"]),
+            detection_mask,
         )
         self.on_status(True, f"config updated: {data}")
 

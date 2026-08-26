@@ -28,7 +28,7 @@ def test_config_poller_updates_runtime_config_on_success():
     rc = RuntimeConfig()
     poller = ConfigPoller("http://x", "/config", 60.0, rc, session=session)
     poller.poll_once()
-    assert rc.get() == (0.7, 20.0, 45.0)
+    assert rc.get() == (0.7, 20.0, 45.0, None)
 
 
 def test_config_poller_keeps_last_good_value_on_failure():
@@ -38,7 +38,7 @@ def test_config_poller_keeps_last_good_value_on_failure():
     poller = ConfigPoller("http://x", "/config", 60.0, rc, session=session)
     with pytest.raises(RuntimeError):
         poller.poll_once()
-    assert rc.get() == (0.5, 32.0, 90.0)
+    assert rc.get() == (0.5, 32.0, 90.0, None)
 
 
 def test_config_poller_loop_survives_repeated_failures(monkeypatch):

@@ -22,11 +22,16 @@ class RiskAccumulator:
         self._last_tick_ts = None
 
     def update(self, pressure_vector, calibration_factor, critical_pressure,
-               critical_time, now=None):
+               critical_time, detection_mask=None, now=None):
         """Advance the accumulator by one frame.
+
+        detection_mask: optional bool array (True = detect), shape
+        (n_cells,). Cells where it's False never accumulate risk or fire,
+        regardless of pressure. None means the whole grid is detected.
 
         Returns (fired_idx, risk_mask):
           - risk_mask: bool array, cells currently over the pressure threshold
+            (and within the detection mask)
           - fired_idx: int array, cells that just reached critical_time AND
             are past their alert cooldown (i.e. should be reported now)
         """
@@ -44,6 +49,8 @@ class RiskAccumulator:
 
         threshold = critical_pressure / calibration_factor
         risk_mask = pressure_vector > threshold
+        if detection_mask is not None:
+            risk_mask = risk_mask & detection_mask
 
         self.accumulated_risk = (self.accumulated_risk + risk_mask * dt_min) * risk_mask
 

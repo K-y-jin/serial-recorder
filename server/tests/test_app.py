@@ -22,7 +22,7 @@ def test_get_config_defaults(client):
     data = resp.get_json()
     assert data["cols"] == 4
     assert data["rows"] == 4
-    assert data["calibration_factor"] == 0.5
+    assert data["calibration_factor"] == 0.4755
 
 
 def test_put_config_updates_and_returns_full_snapshot(client):

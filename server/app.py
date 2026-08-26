@@ -1,4 +1,4 @@
-"""Real server for the pressure risk monitoring client.
+r"""Real server for the pressure risk monitoring client.
 
 Implements the same REST contract as client/mock_server/server.py (GET/PUT
 /config, POST /event, GET/PUT /command, POST /state) plus a dashboard that
@@ -17,8 +17,12 @@ for longer than --client-timeout, it's marked disconnected (shown on the
 dashboard) and an alert fires.
 
 Endpoints:
-  GET  /config      -> {"cols", "rows", "calibration_factor", "critical_pressure", "critical_time"}
-  PUT  /config      -> update thresholds/grid size, returns the new config
+  GET  /config      -> {"cols", "rows", "calibration_factor", "critical_pressure",
+                        "critical_time", "mask_excluded_idx"}
+  PUT  /config      -> update thresholds/grid size/mask, returns the new config.
+                        mask_excluded_idx is a list of flat cell indices excluded
+                        from risk detection on the client (empty = whole grid
+                        detected).
   POST /event       -> client risk warning: {"accumulated_time", "risky_idx", "pressure_mask_idx"}
   GET  /command     -> {"command": "start"|"pause"|"stop"|"reset"|"state"|null}, consumed once
   PUT  /command     -> queue a pending command: {"command": "..."}
@@ -29,28 +33,56 @@ Endpoints:
   GET  /dashboard   -> HTML dashboard
   GET  /api/latest  -> JSON snapshot for the dashboard poller, including
                         "connected"/"last_seen" client connection status
+  GET  /api/meta    -> {"warning_dir"}, read-only server-side info for the dashboard
+  GET  /api/defaults -> hardcoded default config values, for the dashboard's
+                        "기본값으로 초기화" (reset to defaults) button
+  GET  /api/config/pending -> {"pending", "config"}: a config restored from disk
+                        on startup that's awaiting dashboard confirmation before
+                        it takes effect (see create_app's startup restore logic)
+  POST /api/config/pending/resolve -> {"action": "restore"|"default"}: applies
+                        the pending config (or the hardcoded defaults) and
+                        clears the pending state
 
 Usage:
     python -m server.app [--host 0.0.0.0] [--port 5000]
-                          [--cols 32] [--rows 64] [--warning-dir warnings]
+                          [--cols 32] [--rows 64]
+                          [--warning-dir %APPDATA%\carerobot\press_warnings]
                           [--client-timeout 10.0]
 """
 import argparse
 import io
+import json
 import logging
 import sys
+import threading
 import time
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
 
 from server.alert import fire_alert
+from server.config_store import ConfigStore
 from server.connection_monitor import DEFAULT_TIMEOUT_S as DEFAULT_CLIENT_TIMEOUT_S
 from server.connection_monitor import ConnectionMonitor
 from server.grid import idx_to_rowcol
-from server.state import ServerState
+from server.state import (
+    DEFAULT_CALIBRATION_FACTOR,
+    DEFAULT_COLS,
+    DEFAULT_CRITICAL_PRESSURE,
+    DEFAULT_CRITICAL_TIME,
+    DEFAULT_ROWS,
+    ServerState,
+)
 from server.warning_store import DEFAULT_DIR as DEFAULT_WARNING_DIR
 from server.warning_store import WarningStore
+
+
+MOCK_WARNING_DATA_PATH = Path(__file__).resolve().parent / "mock_warning_data.json"
+
+
+def _load_mock_warning_data():
+    with open(MOCK_WARNING_DATA_PATH, encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def _template_folder():
@@ -69,8 +101,59 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
     app.logger.setLevel(logging.INFO)
     state = state or ServerState()
     warning_store = WarningStore(warning_dir)
+    config_store = ConfigStore(warning_dir)
     connection_monitor = ConnectionMonitor(state, timeout_s=client_timeout_s)
     connection_monitor.start()
+
+    def _apply_config(updates, reason, persist=True):
+        snapshot = state.update_config(updates)
+        app.logger.info("config %s -> %s", reason, snapshot)
+        if persist:
+            config_store.save(snapshot)
+        return snapshot
+
+    # A config saved from a previous run sits here, awaiting a decision
+    # from the dashboard, instead of being applied automatically -- the
+    # user may have wanted a fresh start rather than picking back up where
+    # an unexpectedly-terminated server left off. Until resolved, state
+    # stays on the ServerState defaults, and the client (which polls
+    # GET /config immediately on its own startup/reconnect) sees defaults.
+    _pending_lock = threading.Lock()
+    _pending_restore = {"config": None}
+    saved_config = config_store.load()
+    if saved_config is not None:
+        _pending_restore["config"] = saved_config
+        app.logger.info(
+            "config restore pending dashboard confirmation -> %s", saved_config
+        )
+    else:
+        _apply_config(state.get_config(), "initialized")
+
+    @app.get("/api/config/pending")
+    def get_pending_config():
+        with _pending_lock:
+            cfg = _pending_restore["config"]
+        return jsonify({"pending": cfg is not None, "config": cfg})
+
+    @app.post("/api/config/pending/resolve")
+    def resolve_pending_config():
+        body = request.get_json(force=True)
+        action = body.get("action")
+        with _pending_lock:
+            cfg = _pending_restore["config"]
+            if cfg is None:
+                return jsonify({"status": "error", "message": "no pending config"}), 400
+            if action == "restore":
+                snapshot = _apply_config(cfg, "restored (confirmed)")
+            elif action == "default":
+                snapshot = _apply_config(
+                    state.get_config(), "initialized (user chose default)", persist=False
+                )
+                config_store.delete()
+            else:
+                return jsonify({"status": "error", "message": "invalid action"}), 400
+            _pending_restore["config"] = None
+        return jsonify(snapshot)
 
     @app.get("/config")
     def get_config():
@@ -80,17 +163,14 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
     @app.put("/config")
     def put_config():
         body = request.get_json(force=True)
-        snapshot = state.update_config(body)
-        app.logger.info("config updated -> %s", snapshot)
+        snapshot = _apply_config(body, "updated")
         return jsonify(snapshot)
 
-    @app.post("/event")
-    def post_event():
-        state.touch()
-        data = request.get_json(force=True)
+    def _handle_event(data, log_prefix="EVENT"):
         record = state.record_event(data)
         app.logger.info(
-            "EVENT accumulated_time=%s risky_idx=%s pressure_mask_idx=%d cells",
+            "%s accumulated_time=%s risky_idx=%s pressure_mask_idx=%d cells",
+            log_prefix,
             data.get("accumulated_time"),
             data.get("risky_idx"),
             len(data.get("pressure_mask_idx", [])),
@@ -100,7 +180,39 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
             f"압력 위험 경고: {len(risky_idx)}개 셀이 critical_time을 초과했습니다."
         )
         warning_store.log_event(data, record["received_at"])
-        return jsonify({"status": "ok", "received_at": record["received_at"]}), 200
+        return record["received_at"]
+
+    @app.post("/event")
+    def post_event():
+        state.touch()
+        data = request.get_json(force=True)
+        received_at = _handle_event(data)
+        return jsonify({"status": "ok", "received_at": received_at}), 200
+
+    @app.post("/api/mock-warning")
+    def post_mock_warning():
+        """모의 경고 발생: Calib31.CSV 1000번째 행에서 뽑아 둔 실측 압력
+        데이터(mock_warning_data.json)를 현재 config 임계값에 대입해 실제
+        /event와 동일한 형태의 위험 경고를 만들어낸다."""
+        state.touch()
+        mock = _load_mock_warning_data()
+        pressure = mock["pressure"]
+        config = state.get_config()
+        threshold = config["critical_pressure"] / config["calibration_factor"]
+        mask_excluded_idx = set(config.get("mask_excluded_idx", []))
+        pressure_mask_idx = [i for i, p in enumerate(pressure) if p > 0]
+        risky_idx = [
+            i for i, p in enumerate(pressure)
+            if p > threshold and i not in mask_excluded_idx
+        ]
+        data = {
+            "accumulated_time": config["critical_time"],
+            "risky_idx": risky_idx,
+            "risky_pressure": [pressure[i] for i in risky_idx],
+            "pressure_mask_idx": pressure_mask_idx,
+        }
+        received_at = _handle_event(data, log_prefix="MOCK EVENT")
+        return jsonify({"status": "ok", "received_at": received_at}), 200
 
     @app.get("/command")
     def get_command():
@@ -151,6 +263,42 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
     def dashboard():
         return render_template("dashboard.html")
 
+    @app.get("/api/meta")
+    def api_meta():
+        return jsonify({"warning_dir": str(warning_store.base_dir.resolve())})
+
+    @app.get("/api/defaults")
+    def api_defaults():
+        return jsonify({
+            "cols": DEFAULT_COLS,
+            "rows": DEFAULT_ROWS,
+            "calibration_factor": DEFAULT_CALIBRATION_FACTOR,
+            "critical_pressure": DEFAULT_CRITICAL_PRESSURE,
+            "critical_time": DEFAULT_CRITICAL_TIME,
+            "mask_excluded_idx": [],
+        })
+
+    @app.get("/api/history")
+    def api_history():
+        limit = request.args.get("limit", default=50, type=int)
+        records = warning_store.read_history(limit=limit)
+        cols = state.snapshot()["cols"]
+        for record in records:
+            record["risky_cells"] = idx_to_rowcol(record.get("risky_idx", []), cols)
+        return jsonify({"history": records})
+
+    @app.post("/api/history/site")
+    def api_history_site():
+        body = request.get_json(force=True)
+        received_at = body.get("received_at")
+        site = body.get("site", "")
+        if received_at is None:
+            return jsonify({"status": "error", "message": "received_at required"}), 400
+        found = warning_store.annotate_site(received_at, site)
+        if not found:
+            return jsonify({"status": "error", "message": "no matching warning"}), 404
+        return jsonify({"status": "ok"})
+
     @app.get("/api/latest")
     def api_latest():
         snap = state.snapshot()
@@ -164,6 +312,7 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
         return jsonify({
             "cols": cols,
             "rows": snap["rows"],
+            "mask_excluded_cells": idx_to_rowcol(snap.get("mask_excluded_idx", []), cols),
             "has_warning": latest_event is not None,
             "latest_event": latest_event,
             "latest_state": snap["latest_state"],
@@ -181,8 +330,8 @@ def build_parser():
     p = argparse.ArgumentParser(prog="server.app", description="Pressure risk monitoring server")
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--port", type=int, default=5000)
-    p.add_argument("--cols", type=int, default=64)
-    p.add_argument("--rows", type=int, default=32)
+    p.add_argument("--cols", type=int, default=32)
+    p.add_argument("--rows", type=int, default=64)
     p.add_argument("--warning-dir", default=DEFAULT_WARNING_DIR,
                     help="directory to log warnings.log and images/ into")
     p.add_argument("--client-timeout", type=float, default=DEFAULT_CLIENT_TIMEOUT_S,
@@ -197,6 +346,7 @@ def main(argv=None):
         warning_dir=args.warning_dir,
         client_timeout_s=args.client_timeout,
     )
+    print(f" * Dashboard: http://localhost:{args.port}/dashboard")
     app.run(host=args.host, port=args.port)
 
 

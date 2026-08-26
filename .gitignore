@@ -17,6 +17,7 @@ dist/
 
 # CSV outputs (allow sensor_logs/ which is the upload target)
 *.csv
+*.CSV
 !sensor_logs/*.csv
 !sensor_logs/**/*.csv
 
