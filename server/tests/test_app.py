@@ -108,6 +108,43 @@ def test_event_triggers_warning_with_grid_cells(client):
     assert "received_at" in ev
 
 
+def test_event_clear_partially_resolves_warning(client):
+    client.post("/event", json={
+        "accumulated_time": 90.0,
+        "risky_idx": [0, 5],
+        "risky_pressure": [40.0, 41.0],
+        "pressure_mask_idx": [0, 1, 5, 6],
+    })
+
+    resp = client.post("/event/clear", json={"cleared_idx": [0]})
+    assert resp.status_code == 200
+
+    latest = client.get("/api/latest").get_json()
+    assert latest["has_warning"] is True
+    assert latest["latest_event"]["risky_idx"] == [5]
+    assert latest["latest_event"]["risky_pressure"] == [41.0]
+
+
+def test_event_clear_drops_warning_once_all_cells_resolved(client):
+    client.post("/event", json={
+        "accumulated_time": 90.0,
+        "risky_idx": [0, 5],
+        "pressure_mask_idx": [0, 1, 5, 6],
+    })
+
+    client.post("/event/clear", json={"cleared_idx": [0, 5]})
+
+    latest = client.get("/api/latest").get_json()
+    assert latest["has_warning"] is False
+    assert latest["latest_event"] is None
+
+
+def test_event_clear_with_no_active_warning_is_a_noop(client):
+    resp = client.post("/event/clear", json={"cleared_idx": [0]})
+    assert resp.status_code == 200
+    assert client.get("/api/latest").get_json()["has_warning"] is False
+
+
 def test_api_latest_no_warning_initially(client):
     data = client.get("/api/latest").get_json()
     assert data["has_warning"] is False

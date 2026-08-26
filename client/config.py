@@ -26,6 +26,7 @@ class ClientConfig:
     server_base_url: str = "http://localhost:5000"
     config_path: str = "/config"
     event_path: str = "/event"
+    event_clear_path: str = "/event/clear"
     image_path: str = "/image"
     command_path: str = "/command"
     state_path: str = "/state"

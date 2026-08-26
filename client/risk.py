@@ -20,6 +20,11 @@ class RiskAccumulator:
         self.accumulated_risk = np.zeros(n_cells, dtype=np.float64)
         self.last_alert_time = np.full(n_cells, -np.inf, dtype=np.float64)
         self._last_tick_ts = None
+        # Cells currently reported to the server as an active warning (i.e.
+        # fired and not yet cleared). Used to detect when a previously-fired
+        # cell's pressure drops back under threshold, so the caller can tell
+        # the server the warning is resolved.
+        self.active_idx = set()
 
     def update(self, pressure_vector, calibration_factor, critical_pressure,
                critical_time, detection_mask=None, now=None):
@@ -29,11 +34,14 @@ class RiskAccumulator:
         (n_cells,). Cells where it's False never accumulate risk or fire,
         regardless of pressure. None means the whole grid is detected.
 
-        Returns (fired_idx, risk_mask):
+        Returns (fired_idx, risk_mask, cleared_idx):
           - risk_mask: bool array, cells currently over the pressure threshold
             (and within the detection mask)
           - fired_idx: int array, cells that just reached critical_time AND
             are past their alert cooldown (i.e. should be reported now)
+          - cleared_idx: int array, cells that were part of an active
+            (fired, unresolved) warning but have now dropped back under the
+            pressure threshold -- i.e. the warning for those cells resolved
         """
         if pressure_vector.shape[0] != self.n_cells:
             raise ValueError(
@@ -60,12 +68,21 @@ class RiskAccumulator:
         fired_idx = np.nonzero(fired_mask)[0]
         if fired_idx.size:
             self.last_alert_time[fired_idx] = now
-        return fired_idx, risk_mask
+            self.active_idx.update(fired_idx.tolist())
+
+        not_risky_now = np.nonzero(~risk_mask)[0]
+        cleared = self.active_idx.intersection(not_risky_now.tolist())
+        if cleared:
+            self.active_idx.difference_update(cleared)
+        cleared_idx = np.array(sorted(cleared), dtype=np.int64)
+
+        return fired_idx, risk_mask, cleared_idx
 
     def reset(self):
         """Zero out accumulated_risk (the `reset` command). Alert cooldowns
         are left untouched -- only the accumulated risk itself is cleared."""
         self.accumulated_risk = np.zeros(self.n_cells, dtype=np.float64)
+        self.active_idx = set()
 
     def resync(self):
         """Forget the last tick timestamp so the next update() computes

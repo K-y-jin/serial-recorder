@@ -25,11 +25,14 @@ Usage:
                            [--dry-run] [--dry-fps 30]
 """
 import argparse
+import logging
+import logging.handlers
 import os
 import signal
 import sys
 import threading
 import time
+from pathlib import Path
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
@@ -51,6 +54,38 @@ from client.warning_log import WarningLog  # noqa: E402
 
 DEFAULT_PORT = "/dev/ttyUSB0"
 
+logger = logging.getLogger("client.main")
+
+_APP_LOG_HANDLER_MARKER = "_pressure_app_log_handler"
+APP_LOG_BACKUP_DAYS = 14
+
+
+def configure_app_log_file(warning_log_dir):
+    """Routes every "client.*" logger (main.py, warning_log.py, ...) into
+    <warning_log_dir>/app.log -- a running record of serial connect/
+    disconnect, monitor start/pause/stop/reset, and config-poll/command-
+    poll/event/state/image send status, independent of warnings.log
+    (which only holds risk-warning events).
+
+    Unlike the server (a Windows desktop app, restarted often), this
+    client runs unattended 24/7 on a Raspberry Pi with limited SD-card
+    space, so app.log rotates at midnight and keeps only the last
+    APP_LOG_BACKUP_DAYS days instead of growing forever."""
+    root = logging.getLogger("client")
+    root.setLevel(logging.INFO)
+    for h in list(root.handlers):
+        if getattr(h, _APP_LOG_HANDLER_MARKER, False):
+            root.removeHandler(h)
+            h.close()
+    log_path = Path(warning_log_dir) / "app.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.TimedRotatingFileHandler(
+        log_path, when="midnight", backupCount=APP_LOG_BACKUP_DAYS, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    setattr(handler, _APP_LOG_HANDLER_MARKER, True)
+    root.addHandler(handler)
+
 
 def build_parser():
     p = argparse.ArgumentParser(prog="client.main", description="Pressure risk monitoring client")
@@ -64,6 +99,7 @@ def build_parser():
     p.add_argument("--server-url", default=ClientConfig.server_base_url)
     p.add_argument("--config-path", default=ClientConfig.config_path)
     p.add_argument("--event-path", default=ClientConfig.event_path)
+    p.add_argument("--event-clear-path", default=ClientConfig.event_clear_path)
     p.add_argument("--image-path", default=ClientConfig.image_path)
     p.add_argument("--warning-log-dir", default=ClientConfig.warning_log_dir,
                     help="directory to log warnings.log, send.log, and images/ into")
@@ -148,6 +184,7 @@ class ClientApp:
         self.stop_event = threading.Event()
         n_cells = args.cols * args.rows
 
+        configure_app_log_file(args.warning_log_dir)
         self.runtime_config = RuntimeConfig()
         self.warning_log = WarningLog(args.warning_log_dir)
         self.risk_acc = RiskAccumulator(n_cells, alert_cooldown_s=args.alert_cooldown)
@@ -166,6 +203,10 @@ class ClientApp:
         self.sender = EventSender(
             args.server_url, args.event_path, timeout_s=args.http_timeout,
             retry_delay_s=args.http_retry_delay, on_status=self.on_send_status,
+        )
+        self.clear_sender = EventSender(
+            args.server_url, args.event_clear_path, timeout_s=args.http_timeout,
+            retry_delay_s=args.http_retry_delay, on_status=self.on_clear_send_status,
         )
         self.image_sender = ImageSender(
             args.server_url, args.image_path, timeout_s=args.http_timeout,
@@ -192,9 +233,15 @@ class ClientApp:
             return
 
         calib, crit_p, crit_t, detection_mask = self.runtime_config.get()
-        fired_idx, _risk_mask = self.risk_acc.update(
+        fired_idx, _risk_mask, cleared_idx = self.risk_acc.update(
             pressure_vector, calib, crit_p, crit_t, detection_mask=detection_mask
         )
+
+        if cleared_idx.size:
+            clear_payload = {"cleared_idx": cleared_idx.tolist()}
+            self.warning_log.log_warning(clear_payload)
+            self.clear_sender.enqueue(clear_payload)
+
         if fired_idx.size == 0:
             return
         pressure_mask_idx = np.nonzero(
@@ -227,29 +274,33 @@ class ClientApp:
         try:
             new_state = self.monitor.apply(command)
         except ValueError as e:
-            print(f"[monitor] {e}", flush=True)
+            logger.info("[monitor] %s", e)
             return
-        print(f"[monitor] {command} -> {new_state}", flush=True)
+        logger.info("[monitor] %s -> %s", command, new_state)
 
     def on_serial_status(self, connected, msg):
-        print(f"[serial] {msg}", flush=True)
+        logger.info("[serial] %s", msg)
 
     def on_poll_status(self, ok, msg):
-        print(f"[config] {msg}", flush=True)
+        logger.info("[config] %s", msg)
 
     def on_command_status(self, ok, msg):
-        print(f"[command] {msg}", flush=True)
+        logger.info("[command] %s", msg)
 
     def on_send_status(self, ok, msg):
-        print(f"[event] {msg}", flush=True)
+        logger.info("[event] %s", msg)
         self.warning_log.log_send("event", ok, msg)
 
+    def on_clear_send_status(self, ok, msg):
+        logger.info("[event_clear] %s", msg)
+        self.warning_log.log_send("event_clear", ok, msg)
+
     def on_state_send_status(self, ok, msg):
-        print(f"[state] {msg}", flush=True)
+        logger.info("[state] %s", msg)
         self.warning_log.log_send("state", ok, msg)
 
     def on_image_send_status(self, ok, msg):
-        print(f"[image] {msg}", flush=True)
+        logger.info("[image] %s", msg)
         self.warning_log.log_send("image", ok, msg)
 
     def run(self):
@@ -262,6 +313,7 @@ class ClientApp:
         self.poller.start()
         self.command_poller.start()
         self.sender.start()
+        self.clear_sender.start()
         self.state_sender.start()
         self.image_sender.start()
         print("[client] running... press Ctrl+C to stop", flush=True)
@@ -273,6 +325,7 @@ class ClientApp:
             self.poller.stop()
             self.command_poller.stop()
             self.sender.stop()
+            self.clear_sender.stop()
             self.state_sender.stop()
             self.image_sender.stop()
             print("[client] stopped", flush=True)

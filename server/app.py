@@ -24,6 +24,9 @@ Endpoints:
                         from risk detection on the client (empty = whole grid
                         detected).
   POST /event       -> client risk warning: {"accumulated_time", "risky_idx", "pressure_mask_idx"}
+  POST /event/clear -> client warning-cleared notice: {"cleared_idx"}; removes those
+                        cells from the current warning, dropping it (has_warning -> False)
+                        once no risky cells remain
   GET  /command     -> {"command": "start"|"pause"|"stop"|"reset"|"state"|null}, consumed once
   PUT  /command     -> queue a pending command: {"command": "..."}
   POST /state       -> client's answer to a "state" command: {"timestamp", "pressure"}
@@ -249,6 +252,18 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
         data = request.get_json(force=True)
         received_at = _handle_event(data)
         return jsonify({"status": "ok", "received_at": received_at}), 200
+
+    @app.post("/event/clear")
+    def post_event_clear():
+        state.touch()
+        data = request.get_json(force=True)
+        cleared_idx = data.get("cleared_idx", [])
+        updated = state.clear_event(cleared_idx)
+        app.logger.info(
+            "EVENT CLEAR cleared_idx=%s -> %s",
+            cleared_idx, "resolved" if updated is None else f"remaining={updated['risky_idx']}",
+        )
+        return jsonify({"status": "ok"}), 200
 
     @app.post("/api/mock-warning")
     def post_mock_warning():

@@ -59,6 +59,7 @@ def _start_all(client_app):
     client_app.poller.start()
     client_app.command_poller.start()
     client_app.sender.start()
+    client_app.clear_sender.start()
     client_app.state_sender.start()
 
 
@@ -67,6 +68,7 @@ def _stop_all(client_app):
     client_app.poller.stop()
     client_app.command_poller.stop()
     client_app.sender.stop()
+    client_app.clear_sender.stop()
     client_app.state_sender.stop()
 
 

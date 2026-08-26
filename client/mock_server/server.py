@@ -4,6 +4,7 @@ Endpoints:
   GET  /config   -> {"calibration_factor": ..., "critical_pressure": ..., "critical_time": ...}
   PUT  /config   -> update the in-memory config (test convenience, not part of the real spec)
   POST /event    -> logs {"accumulated_time", "risky_idx", "pressure_mask_idx"} and returns 200
+  POST /event/clear -> logs {"cleared_idx"} and returns 200
   GET  /command  -> {"command": "start"|"pause"|"stop"|"reset"|"state"|null}, consumed once
   PUT  /command  -> queue a pending command (test convenience)
   POST /state    -> logs {"pressure", "timestamp"} (client's answer to a "state" command)
@@ -30,6 +31,7 @@ def create_app(initial_state=None):
     state = dict(initial_state or DEFAULT_STATE)
     lock = threading.Lock()
     events = []
+    clear_events = []
     pending_command = {"command": None}
     state_reports = []
 
@@ -58,6 +60,14 @@ def create_app(initial_state=None):
             data.get("risky_idx"),
             len(data.get("pressure_mask_idx", [])),
         )
+        return jsonify({"status": "ok"}), 200
+
+    @app.post("/event/clear")
+    def post_event_clear():
+        data = request.get_json(force=True)
+        with lock:
+            clear_events.append(data)
+        app.logger.info("EVENT CLEAR cleared_idx=%s", data.get("cleared_idx"))
         return jsonify({"status": "ok"}), 200
 
     @app.get("/command")
@@ -89,6 +99,7 @@ def create_app(initial_state=None):
 
     app.config["_state"] = state
     app.config["_events"] = events
+    app.config["_clear_events"] = clear_events
     app.config["_pending_command"] = pending_command
     app.config["_state_reports"] = state_reports
     app.config["_lock"] = lock

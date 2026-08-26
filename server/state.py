@@ -65,6 +65,32 @@ class ServerState:
             self.event_history.append(record)
         return record
 
+    def clear_event(self, cleared_idx):
+        """Removes `cleared_idx` cells from latest_event's risky_idx (the
+        client reports these once their pressure drops back under
+        threshold). If no risky cells remain, the warning is fully
+        resolved and latest_event is dropped, so the dashboard's
+        has_warning flips back to False. event_history is left untouched
+        -- it's a record of what was actually reported, not a live view."""
+        cleared_idx = set(cleared_idx)
+        with self._lock:
+            if not self.latest_event:
+                return None
+            risky_idx = self.latest_event.get("risky_idx", [])
+            risky_pressure = self.latest_event.get("risky_pressure", [])
+            remaining = [
+                (i, p) for i, p in zip(risky_idx, risky_pressure or [None] * len(risky_idx))
+                if i not in cleared_idx
+            ]
+            if not remaining:
+                self.latest_event = None
+                return None
+            updated = dict(self.latest_event)
+            updated["risky_idx"] = [i for i, _ in remaining]
+            updated["risky_pressure"] = [p for _, p in remaining]
+            self.latest_event = updated
+            return dict(updated)
+
     def clear_mock_latest_event(self):
         """Drops mock-tagged records from event_history, and un-sticks
         latest_event if it's currently showing a mock warning -- so the
