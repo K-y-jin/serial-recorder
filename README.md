@@ -14,6 +14,8 @@
    dist\pressure-server\pressure-server.exe
    ```
    (또는 소스에서: `python -m server.app`)
+
+   > exe 설치 경로에 한글이 포함되면 안 됩니다.
 2. 브라우저로 대시보드 접속: `http://localhost:5000/dashboard`
 3. 서버 IP 확인: 대시보드 상단에 표시되는 "서버 IP" 확인 (클라이언트 설정에 필요)
 
