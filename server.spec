@@ -15,7 +15,10 @@ a = Analysis(
     ["server/win_launcher.py"],
     pathex=["."],
     binaries=[],
-    datas=[("server/templates", "server/templates")],
+    datas=[
+        ("server/templates", "server/templates"),
+        ("server/mock_warning_data.json", "server"),
+    ],
     hiddenimports=[
         "server.app", "server.alert", "server.connection_monitor",
         "server.grid", "server.state", "server.warning_store",
