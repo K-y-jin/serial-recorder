@@ -16,6 +16,43 @@ def client(tmp_path):
     app.config["_connection_monitor"].stop()
 
 
+def test_default_does_not_reprompt_after_a_later_restart_with_no_changes(tmp_path):
+    warning_dir = tmp_path / "warnings"
+
+    def start():
+        app = create_app(ServerState(cols=4, rows=4), warning_dir=warning_dir)
+        app.config["TESTING"] = True
+        return app
+
+    def stop(app):
+        app.config["_connection_monitor"].stop()
+
+    # Run 1: user changes a setting, which gets persisted.
+    app1 = start()
+    with app1.test_client() as c1:
+        c1.put("/config", json={"critical_pressure": 55.0})
+    stop(app1)
+
+    # Run 2 (restart): sees the saved config as pending, user picks "기본값 사용".
+    app2 = start()
+    with app2.test_client() as c2:
+        assert c2.get("/api/config/pending").get_json()["pending"] is True
+        c2.post("/api/config/pending/resolve", json={"action": "default"})
+    stop(app2)
+    assert not (warning_dir / "config.json").exists()
+
+    # Run 3 (restart, no user changes at all): must NOT recreate config.json,
+    # or run 4 would wrongly see it as a pending restore again.
+    app3 = start()
+    stop(app3)
+    assert not (warning_dir / "config.json").exists()
+
+    app4 = start()
+    with app4.test_client() as c4:
+        assert c4.get("/api/config/pending").get_json()["pending"] is False
+    stop(app4)
+
+
 def test_get_config_defaults(client):
     resp = client.get("/config")
     assert resp.status_code == 200

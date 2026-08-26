@@ -33,7 +33,9 @@ Endpoints:
   GET  /dashboard   -> HTML dashboard
   GET  /api/latest  -> JSON snapshot for the dashboard poller, including
                         "connected"/"last_seen" client connection status
-  GET  /api/meta    -> {"warning_dir"}, read-only server-side info for the dashboard
+  GET  /api/meta    -> {"warning_dir", "server_ip"}, read-only server-side
+                        info for the dashboard (server_ip is a best-effort
+                        guess, for typing into the client's SERVER_IP)
   GET  /api/defaults -> hardcoded default config values, for the dashboard's
                         "기본값으로 초기화" (reset to defaults) button
   GET  /api/config/pending -> {"pending", "config"}: a config restored from disk
@@ -84,6 +86,26 @@ MOCK_WARNING_DATA_PATH = Path(__file__).resolve().parent / "mock_warning_data.js
 def _load_mock_warning_data():
     with open(MOCK_WARNING_DATA_PATH, encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def _get_local_ip():
+    """Best-effort local IP address for the dashboard's "서버 IP" display
+    (client/.env's SERVER_IP is set to this by hand, per set_server_ip.sh).
+    Opens a UDP "connection" to a public address -- no packet is actually
+    sent -- purely so the OS picks the outbound route/interface for us;
+    that's normally the active Wi-Fi adapter on a machine with no wired
+    connection. Falls back to the hostname's resolved address if routing
+    can't be determined (e.g. no network at all)."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except OSError:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return None
 
 
 _APP_LOG_HANDLER_MARKER = "_bliss_app_log_handler"
@@ -154,7 +176,11 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
             "config restore pending dashboard confirmation -> %s", saved_config
         )
     else:
-        _apply_config(state.get_config(), "initialized")
+        # Hardcoded defaults, not a user-saved config -- don't persist, or
+        # the next restart would find this file and wrongly prompt to
+        # restore/default again (see test_default_does_not_reprompt_after_
+        # a_later_restart_with_no_changes).
+        _apply_config(state.get_config(), "initialized", persist=False)
 
     @app.get("/api/config/pending")
     def get_pending_config():
@@ -184,7 +210,13 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
 
     @app.get("/config")
     def get_config():
-        state.touch()
+        # The dashboard UI also reads /config (to populate its settings
+        # panel), but that's a browser request, not the client device
+        # checking in -- it must not count as contact, or the connection
+        # monitor thinks a client has connected when none ever has (see
+        # X-Dashboard-Request usage in dashboard.html).
+        if request.headers.get("X-Dashboard-Request") != "1":
+            state.touch()
         return jsonify(state.get_config())
 
     @app.put("/config")
@@ -319,7 +351,10 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
 
     @app.get("/api/meta")
     def api_meta():
-        return jsonify({"warning_dir": str(warning_store.base_dir.resolve())})
+        return jsonify({
+            "warning_dir": str(warning_store.base_dir.resolve()),
+            "server_ip": _get_local_ip(),
+        })
 
     @app.get("/api/defaults")
     def api_defaults():

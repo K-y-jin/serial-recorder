@@ -1,7 +1,37 @@
 # Sensor Recorder
 
 매트리스 압력 센서의 데이터를 시리얼 포트로 수신하여 실시간 colormap으로 표시하고 CSV로 저장하는 프로그램.
-**GUI** (`main.py`)와 **CLI 도구 모음** (`cmd/`)을 함께 제공합니다.
+**GUI** (`main.py`)와 **CLI 도구 모음** (`cmd/`)을 함께 제공합니다. 여기에 더해
+**서버(Windows)** + **클라이언트(라즈베리파이5)** 구조로 위험 경고를 실시간 모니터링하는
+[server/](server/README.md), [client/](client/README.md) 앱도 포함되어 있습니다.
+
+## Quick Start
+
+### 서버 PC (Windows)
+
+1. 서버 앱 시작
+   ```
+   dist\bliss-server\bliss-server.exe
+   ```
+   (또는 소스에서: `python -m server.app`)
+2. 브라우저로 대시보드 접속: `http://localhost:5000/dashboard`
+3. 서버 IP 확인: 대시보드 상단에 표시되는 "서버 IP" 확인 (클라이언트 설정에 필요)
+
+### 클라이언트 PC (라즈베리파이)
+
+1. 라즈베리파이에 SSH 접속
+2. 서버 IP 설정
+   ```bash
+   ./set_server_ip.sh <서버-IP>
+   ```
+3. 클라이언트 시작
+   ```bash
+   ./start_client.sh
+   ```
+4. 클라이언트 중지
+   ```bash
+   ./stop_client.sh
+   ```
 
 ## Features
 
