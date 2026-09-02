@@ -1,7 +1,7 @@
 # PyInstaller spec for the Windows build of the pressure-monitoring server.
 #
-# Build (on Windows, from the repo root, with server/requirements-build.txt
-# installed):
+# Build (on Windows, from the risk_monitor/ directory, with
+# server/requirements-build.txt installed):
 #     pyinstaller server.spec
 #
 # Produces dist/pressure-server/pressure-server.exe (onedir build -- safer than

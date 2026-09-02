@@ -22,14 +22,14 @@ dist/
 !sensor_logs/**/*.csv
 
 # start_client.sh / stop_client.sh runtime files
-/run/
-/logs/
-/nrc/
+/risk_monitor/run/
+/risk_monitor/logs/
+/risk_monitor/nrc/
 
 # server/app.py persisted risk-warning logs + snapshot images
-/warnings/
-nrc/press_warnings/app.log
-nrc/press_warnings/warnings.log
+/risk_monitor/warnings/
+risk_monitor/nrc/press_warnings/app.log
+risk_monitor/nrc/press_warnings/warnings.log
 
 # Local env config (SERVER_IP, etc.)
 .env

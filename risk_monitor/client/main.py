@@ -34,14 +34,16 @@ import threading
 import time
 from pathlib import Path
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = os.path.dirname(_APP_ROOT)
+for _p in (_APP_ROOT, _REPO_ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import numpy as np  # noqa: E402
 
-from sensor.frame_parser import FrameParser  # noqa: E402
-from sensor.serial_reader import SerialReader  # noqa: E402
+from common.frame_parser import FrameParser  # noqa: E402
+from common.serial_reader import SerialReader  # noqa: E402
 
 from client.config import ClientConfig, RuntimeConfig  # noqa: E402
 from client.http_client import (  # noqa: E402

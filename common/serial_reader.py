@@ -2,7 +2,7 @@ import threading
 import time
 import serial
 
-from .config import RECONNECT_DELAY_S, SERIAL_READ_CHUNK, SERIAL_READ_TIMEOUT_S
+from common.config import RECONNECT_DELAY_S, SERIAL_READ_CHUNK, SERIAL_READ_TIMEOUT_S
 
 
 class SerialReader:

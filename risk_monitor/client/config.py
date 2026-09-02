@@ -2,10 +2,13 @@
 server-managed runtime thresholds (calibration_factor, critical_pressure,
 critical_time) and detection mask, which are refreshed by periodic
 polling."""
+import os
 import threading
 from dataclasses import dataclass
 
 import numpy as np
+
+DEFAULT_WARNING_LOG_DIR = os.path.join(os.path.expanduser("~"), "risk_monitor_logs", "client_warnings")
 
 DEFAULT_CALIBRATION_FACTOR = 0.4755
 DEFAULT_CRITICAL_PRESSURE = 32.0  # mmHg
@@ -37,7 +40,7 @@ class ClientConfig:
     alert_cooldown_s: float = 300.0
     pressure_mask_threshold: int = DEFAULT_PRESSURE_MASK_THRESHOLD
     event_queue_maxsize: int = 64
-    warning_log_dir: str = "logs/client_warnings"
+    warning_log_dir: str = DEFAULT_WARNING_LOG_DIR
 
 
 class RuntimeConfig:

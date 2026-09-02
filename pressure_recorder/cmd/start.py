@@ -18,15 +18,17 @@ import threading
 import time
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
+_REPO_ROOT = os.path.dirname(_PROJECT_ROOT)
+for _p in (_PROJECT_ROOT, _REPO_ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import numpy as np
 
 from sensor import config
 from sensor.csv_logger import CsvLogger
-from sensor.frame_parser import FrameParser
-from sensor.serial_reader import SerialReader
+from common.frame_parser import FrameParser
+from common.serial_reader import SerialReader
 
 
 DEFAULT_PORT = "/dev/ttyUSB0"

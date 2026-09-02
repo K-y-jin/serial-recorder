@@ -59,7 +59,8 @@ python -m server.app --port 5000 --client-timeout 15
 - `POST /event`가 올 때마다 `<warning-dir>/warnings.log`에 JSON 한 줄씩 append
 - `POST /image`가 올 때마다 `<warning-dir>/images/<received_at>.png`로 저장
 
-`<warning-dir>`은 기본 `warnings/` (서버 실행 cwd 기준), `--warning-dir`로 변경 가능:
+`<warning-dir>`은 기본 Windows에서 `%APPDATA%\carerobot\press_warnings`, 그 외(dev/CI)는
+`~/press_warnings`, `--warning-dir`로 변경 가능:
 
 ```bash
 python -m server.app --port 5000 --warning-dir /var/log/pressure/warnings
@@ -98,7 +99,7 @@ pytest server/tests -v
 ## Windows exe 빌드
 
 PyInstaller로 `server/app.py`를 독립 실행형 Windows 앱으로 빌드할 수 있다
-(Windows에서, 또는 Wine 환경에서 실행). 저장소 루트에서:
+(Windows에서, 또는 Wine 환경에서 실행). `risk_monitor/`에서:
 
 ```bat
 build_windows.bat

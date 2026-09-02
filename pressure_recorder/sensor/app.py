@@ -11,8 +11,8 @@ import serial.tools.list_ports
 from . import config
 from .colormap_view import ColormapView
 from .csv_logger import CsvLogger
-from .frame_parser import FrameParser
-from .serial_reader import SerialReader
+from common.frame_parser import FrameParser
+from common.serial_reader import SerialReader
 
 
 BG         = "#1e1f26"

@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 def _default_dir():
     """%APPDATA%\\carerobot\\press_warnings on Windows (the conventional
     per-user app-data location, always writable and independent of where
-    the exe happens to be run from); a repo-relative fallback elsewhere
+    the exe happens to be run from); a home-directory fallback elsewhere
     (dev machines / CI don't set APPDATA)."""
     appdata = os.environ.get("APPDATA")
     if appdata:
         return str(Path(appdata) / "carerobot" / "press_warnings")
-    return "nrc/press_warnings"
+    return str(Path.home() / "press_warnings")
 
 
 DEFAULT_DIR = _default_dir()

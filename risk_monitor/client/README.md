@@ -1,6 +1,6 @@
 # client — 라즈베리파이5 압력 위험도 모니터링 클라이언트
 
-`sensor/serial_reader.py` + `sensor/frame_parser.py`를 재사용해 매트리스 압력 센서
+`../common/serial_reader.py` + `../common/frame_parser.py`를 재사용해 매트리스 압력 센서
 프레임을 시리얼로 읽고, 셀별 누적 위험도(`accumulated_risk`)를 계산해 임계 시간을
 넘긴 셀을 서버로 보고하는 헤드리스(비-GUI) 프로그램.
 
@@ -22,7 +22,7 @@
 ## 로컬 기록 (파일 저장)
 
 `client/warning_log.py:WarningLog`가 서버 연결 여부와 무관하게 아래를
-`<warning-log-dir>`(기본 `logs/client_warnings/`)에 남긴다:
+`<warning-log-dir>`(기본 `~/risk_monitor_logs/client_warnings/`)에 남긴다:
 
 - `warnings.log` — risk 누적으로 경고가 발생한 순간 즉시(전송 성공/실패와
   무관하게) JSON 한 줄씩 append
@@ -76,7 +76,7 @@ python -m client.mock_sensor --link /tmp/ttyUSB0 --fps 30
 ## 실행
 
 ```bash
-pip install -r requirements.txt
+pip install -r client/requirements.txt
 
 # mock 서버 (테스트용)
 pip install -r client/mock_server/requirements.txt
@@ -108,7 +108,7 @@ After=network-online.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/pressure_recorder
+WorkingDirectory=/home/pi/pressure_recorder_repo/risk_monitor
 ExecStart=/usr/bin/python3 -m client.main --port /dev/ttyUSB0 --server-url http://SERVER_HOST:5000
 Restart=on-failure
 RestartSec=5

@@ -1,6 +1,6 @@
 @echo off
 REM Build a Windows executable for server/app.py using PyInstaller.
-REM Run from the repo root on Windows (or under Wine) with Python installed.
+REM Run from the risk_monitor/ directory on Windows (or under Wine) with Python installed.
 REM
 REM IMPORTANT -- why the build is deployed to an ASCII-only path:
 REM This repo lives under a directory whose name contains Hangul.

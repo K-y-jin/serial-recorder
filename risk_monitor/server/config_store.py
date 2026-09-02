@@ -15,11 +15,12 @@ logger = logging.getLogger(__name__)
 def _default_dir():
     """%APPDATA%\\carerobot\\press_warnings on Windows, matching
     warning_store.py's default so config.json lives alongside the other
-    persisted server data; a repo-relative fallback elsewhere."""
+    persisted server data; a home-directory fallback elsewhere (dev
+    machines / CI don't set APPDATA)."""
     appdata = os.environ.get("APPDATA")
     if appdata:
         return str(Path(appdata) / "carerobot" / "press_warnings")
-    return "nrc/press_warnings"
+    return str(Path.home() / "press_warnings")
 
 
 DEFAULT_DIR = _default_dir()
