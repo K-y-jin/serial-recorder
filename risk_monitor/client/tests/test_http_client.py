@@ -20,6 +20,26 @@ class FakeResponse:
         return self._json
 
 
+def test_config_poller_sends_client_id_as_query_param():
+    session = MagicMock()
+    session.get.return_value = FakeResponse(
+        {"calibration_factor": 0.7, "critical_pressure": 20.0, "critical_time": 45.0}
+    )
+    rc = RuntimeConfig()
+    poller = ConfigPoller("http://x", "/config", 60.0, rc, session=session, client_id="pi-a")
+    poller.poll_once()
+    _, kwargs = session.get.call_args
+    assert kwargs["params"] == {"client_id": "pi-a"}
+
+
+def test_event_sender_includes_client_id_in_payload():
+    session = MagicMock()
+    session.post.return_value = FakeResponse(status=200)
+    sender = EventSender("http://x", "/event", session=session, client_id="pi-a")
+    sender.enqueue({"accumulated_time": 90.0})
+    assert sender._queue.get_nowait()["client_id"] == "pi-a"
+
+
 def test_config_poller_updates_runtime_config_on_success():
     session = MagicMock()
     session.get.return_value = FakeResponse(
@@ -75,7 +95,7 @@ def test_event_sender_drops_oldest_when_queue_full():
     sender.enqueue({"n": 1})
     sender.enqueue({"n": 2})  # queue full -> drop {"n": 1}, keep {"n": 2}
     assert sender._queue.qsize() == 1
-    assert sender._queue.get_nowait() == {"n": 2}
+    assert sender._queue.get_nowait() == {"n": 2, "client_id": ""}
 
 
 def test_event_sender_gives_up_after_max_attempts():
@@ -126,4 +146,4 @@ def test_state_sender_posts_latest_pressure():
     sender.stop()
     session.post.assert_called_once()
     _, kwargs = session.post.call_args
-    assert kwargs["json"] == {"timestamp": 1.0, "pressure": [1, 2, 3]}
+    assert kwargs["json"] == {"timestamp": 1.0, "pressure": [1, 2, 3], "client_id": ""}

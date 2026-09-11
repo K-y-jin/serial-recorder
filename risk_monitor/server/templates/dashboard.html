@@ -545,6 +545,119 @@
         font-size: 16px;
         color: #a0a4ab;
       }
+
+      #clientGridScreen {
+        padding-left: 52px;
+      }
+      #clientGridEmpty {
+        font-size: 17px;
+        color: #a0a4ab;
+        margin-top: 24px;
+      }
+      #clientGrid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(180px, 1fr));
+        grid-template-rows: repeat(2, auto);
+        gap: 16px;
+        max-width: 1100px;
+      }
+      .clientCard {
+        background: #1c1e23;
+        border: 2px solid #333;
+        border-radius: 10px;
+        padding: 14px;
+        cursor: pointer;
+        transition: border-color 0.15s ease;
+      }
+      .clientCard:hover {
+        border-color: #565a63;
+      }
+      .clientCard.disconnected {
+        opacity: 0.6;
+      }
+      .clientCard.warning {
+        border-color: #ff3b3b;
+        animation: clientCardBlink 1s infinite;
+      }
+      @keyframes clientCardBlink {
+        0%,
+        100% {
+          border-color: #ff3b3b;
+          box-shadow: 0 0 0 rgba(255, 59, 59, 0);
+        }
+        50% {
+          border-color: #ff8080;
+          box-shadow: 0 0 14px rgba(255, 59, 59, 0.6);
+        }
+      }
+      .clientCard .clientCardId {
+        font-size: 17px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        word-break: break-all;
+      }
+      .clientCard .clientCardThumbWrap {
+        background: #0a0b0d;
+        border: 1px solid #2a2c30;
+        border-radius: 6px;
+        height: 90px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 8px;
+        overflow: hidden;
+      }
+      .clientCard .clientCardThumbWrap img {
+        max-width: 100%;
+        max-height: 100%;
+      }
+      .clientCard .clientCardThumbPlaceholder {
+        font-size: 13px;
+        color: #565a63;
+      }
+      .clientCard .clientCardBadge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .clientCard .clientCardBadge.ok {
+        background: #1f3a2a;
+        color: #6fd18a;
+      }
+      .clientCard .clientCardBadge.warn {
+        background: #3a1f1f;
+        color: #ff8080;
+      }
+      .clientCard .clientCardLastSeen {
+        font-size: 13px;
+        color: #a0a4ab;
+        margin-top: 6px;
+      }
+      #clientGridOverflow {
+        margin-top: 12px;
+        font-size: 15px;
+        color: #a0a4ab;
+      }
+      #backToGridBtn {
+        background: #2a2c30;
+        color: #e6e6e6;
+        border: 1px solid #3a3d43;
+        border-radius: 6px;
+        padding: 6px 14px;
+        font-size: 16px;
+        cursor: pointer;
+        margin-bottom: 12px;
+      }
+      #backToGridBtn:hover {
+        background: #34363c;
+      }
+      #detailClientId {
+        color: #a0a4ab;
+        font-weight: 400;
+        font-size: 18px;
+      }
     </style>
   </head>
   <body>
@@ -721,8 +834,18 @@
       </div>
     </div>
 
-    <div id="content">
+    <div id="clientGridScreen">
       <h1>Pressure Risk Dashboard</h1>
+      <div id="clientGridEmpty" style="display: none">
+        연결된 클라이언트 없음
+      </div>
+      <div id="clientGrid"></div>
+      <div id="clientGridOverflow"></div>
+    </div>
+
+    <div id="content" style="display: none">
+      <button id="backToGridBtn">← 목록으로</button>
+      <h1>Pressure Risk Dashboard <span id="detailClientId"></span></h1>
       <div id="status" class="ok">대기 중</div>
       <div id="connStatus" class="unknown">장치 상태 확인 중</div>
       <div id="meta">이벤트 없음</div>
@@ -754,6 +877,123 @@
     <script>
       let POLL_MS = 1500;
       let pollTimer = null;
+      const MAX_GRID_CLIENTS = 8;
+
+      // -- 클라이언트 식별자: 모든 클라이언트-scoped 요청에 쿼리 파라미터로 붙인다 --
+      let currentClientId = null;
+      function withClient(url) {
+        if (!currentClientId) return url;
+        const sep = url.includes("?") ? "&" : "?";
+        return `${url}${sep}client_id=${encodeURIComponent(currentClientId)}`;
+      }
+
+      const clientGridScreen = document.getElementById("clientGridScreen");
+      const clientGridEl = document.getElementById("clientGrid");
+      const clientGridEmptyEl = document.getElementById("clientGridEmpty");
+      const clientGridOverflowEl = document.getElementById(
+        "clientGridOverflow",
+      );
+      const contentEl = document.getElementById("content");
+      const detailClientIdEl = document.getElementById("detailClientId");
+
+      const prevClientHasWarning = new Map(); // client_id -> last known has_warning, so a new warning (false -> true) is detected per client and alerted exactly once
+
+      function formatLastSeen(lastSeen) {
+        if (!lastSeen) return "접속 기록 없음";
+        return new Date(lastSeen * 1000).toLocaleTimeString("ko-KR");
+      }
+
+      function renderClientCard(c) {
+        const wasWarning = prevClientHasWarning.get(c.client_id) ?? false;
+        if (c.has_warning && !wasWarning) {
+          playAlertBeep();
+        }
+        prevClientHasWarning.set(c.client_id, c.has_warning);
+
+        const card = document.createElement("div");
+        card.className =
+          "clientCard" +
+          (c.has_warning ? " warning" : "") +
+          (c.connected === false ? " disconnected" : "");
+        card.addEventListener("click", () => openClientDetail(c.client_id));
+
+        const badgeClass = c.has_warning
+          ? "warn"
+          : c.connected === false
+            ? "warn"
+            : "ok";
+        const badgeText = c.has_warning
+          ? "⚠ 위험 경고"
+          : c.connected === false
+            ? "연결 끊김"
+            : c.connected === true
+              ? "연결됨"
+              : "확인 중";
+
+        card.innerHTML =
+          `<div class="clientCardId">${c.client_id}</div>` +
+          `<div class="clientCardThumbWrap"><img loading="lazy" onerror="this.remove()" src="/image/latest?client_id=${encodeURIComponent(c.client_id)}&t=${Date.now()}"></div>` +
+          `<span class="clientCardBadge ${badgeClass}">${badgeText}</span>` +
+          `<div class="clientCardLastSeen">마지막 수신: ${formatLastSeen(c.last_seen)}</div>`;
+        return card;
+      }
+
+      function renderClientGrid(clients) {
+        // Cards a detail view isn't currently open for are dropped from
+        // prevClientHasWarning once they disappear from the server's
+        // client list is out of scope here -- harmless to keep stale
+        // entries around, they just stop updating.
+        const sorted = [...clients].sort((a, b) =>
+          a.client_id.localeCompare(b.client_id),
+        );
+        const shown = sorted.slice(0, MAX_GRID_CLIENTS);
+        const overflow = sorted.length - shown.length;
+
+        clientGridEmptyEl.style.display = sorted.length ? "none" : "block";
+        clientGridEl.innerHTML = "";
+        for (const c of shown) {
+          clientGridEl.appendChild(renderClientCard(c));
+        }
+        clientGridOverflowEl.textContent =
+          overflow > 0 ? `그 외 ${overflow}대 더 연결됨` : "";
+      }
+
+      async function pollClients() {
+        try {
+          const resp = await fetch("/api/clients");
+          const data = await resp.json();
+          renderClientGrid(data.clients);
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
+      function openClientDetail(clientId) {
+        currentClientId = clientId;
+        detailClientIdEl.textContent = `- ${clientId}`;
+        clientGridScreen.style.display = "none";
+        contentEl.style.display = "block";
+        loadConfig();
+        loadMeta();
+        checkPendingConfig();
+        pollHistory(true);
+        poll();
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(poll, POLL_MS);
+      }
+
+      function closeClientDetail() {
+        currentClientId = null;
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = null;
+        contentEl.style.display = "none";
+        clientGridScreen.style.display = "block";
+      }
+
+      document
+        .getElementById("backToGridBtn")
+        .addEventListener("click", closeClientDetail);
+
       const settingsBtn = document.getElementById("settingsBtn");
       const settingsPanel = document.getElementById("settingsPanel");
       const settingsOverlay = document.getElementById("settingsOverlay");
@@ -812,7 +1052,7 @@
           const site = warningSiteInput.value.trim();
           if (pendingWarningReceivedAt !== null && site) {
             try {
-              await fetch("/api/history/site", {
+              await fetch(withClient("/api/history/site"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -937,7 +1177,7 @@
 
       async function loadConfig() {
         try {
-          const resp = await fetch("/config", {
+          const resp = await fetch(withClient("/config"), {
             headers: { "X-Dashboard-Request": "1" },
           });
           const cfg = await resp.json();
@@ -1147,7 +1387,7 @@
       }
 
       async function putConfig(updates) {
-        const resp = await fetch("/config", {
+        const resp = await fetch(withClient("/config"), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updates),
@@ -1188,7 +1428,7 @@
         .getElementById("requestStatusBtn")
         .addEventListener("click", async () => {
           try {
-            await fetch("/command", {
+            await fetch(withClient("/command"), {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ command: "state" }),
@@ -1203,7 +1443,7 @@
         .getElementById("mockWarningBtn")
         .addEventListener("click", async () => {
           try {
-            await fetch("/api/mock-warning", { method: "POST" });
+            await fetch(withClient("/api/mock-warning"), { method: "POST" });
             showSettingsMsg("모의 경고를 발생시켰습니다.");
             pollHistory(true);
           } catch (e) {
@@ -1216,7 +1456,7 @@
         .addEventListener("click", async () => {
           if (!confirm("모의 경고 기록을 모두 삭제하시겠습니까?")) return;
           try {
-            const resp = await fetch("/api/mock-warning/clear", {
+            const resp = await fetch(withClient("/api/mock-warning/clear"), {
               method: "POST",
             });
             const data = await resp.json();
@@ -1245,7 +1485,7 @@
 
       async function checkPendingConfig() {
         try {
-          const resp = await fetch("/api/config/pending");
+          const resp = await fetch(withClient("/api/config/pending"));
           const data = await resp.json();
           if (data.pending) {
             configPendingDetail.textContent = formatPendingDetail(data.config);
@@ -1258,7 +1498,7 @@
 
       async function resolvePendingConfig(action) {
         try {
-          await fetch("/api/config/pending/resolve", {
+          await fetch(withClient("/api/config/pending/resolve"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action }),
@@ -1276,9 +1516,9 @@
         .getElementById("configPendingDefaultBtn")
         .addEventListener("click", () => resolvePendingConfig("default"));
 
-      loadConfig();
-      loadMeta();
-      checkPendingConfig();
+      // loadConfig/loadMeta/checkPendingConfig only run once a client card
+      // is opened (see openClientDetail) -- there is no single client to
+      // scope them to before then.
 
       const canvas = document.getElementById("grid");
       const ctx = canvas.getContext("2d");
@@ -1449,7 +1689,9 @@
         historyDetailSiteInput.value = ev.site || "";
         historyDetailImage.style.display = "none";
         historyDetailNoImage.style.display = "none";
-        const imgUrl = `/api/history/image/${ev.received_at}${ev.is_mock ? "?mock=1" : ""}`;
+        const imgUrl = withClient(
+          `/api/history/image/${ev.received_at}${ev.is_mock ? "?mock=1" : ""}`,
+        );
         historyDetailImage.onload = () => {
           historyDetailImage.style.display = "block";
         };
@@ -1479,7 +1721,7 @@
           if (!currentHistoryDetail) return;
           const site = historyDetailSiteInput.value.trim();
           try {
-            await fetch("/api/history/site", {
+            await fetch(withClient("/api/history/site"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1496,7 +1738,7 @@
 
       async function pollHistory(force) {
         try {
-          const resp = await fetch("/api/history");
+          const resp = await fetch(withClient("/api/history"));
           const data = await resp.json();
           if (force || data.history.length !== lastHistoryCount) {
             renderHistory(data.history);
@@ -1508,7 +1750,7 @@
 
       async function poll() {
         try {
-          const resp = await fetch("/api/latest");
+          const resp = await fetch(withClient("/api/latest"));
           const data = await resp.json();
           drawGrid(data);
           updateStatus(data);
@@ -1525,9 +1767,11 @@
         }
       }
 
-      pollHistory();
-      poll();
-      pollTimer = setInterval(poll, POLL_MS);
+      // Overview grid is the landing screen -- poll it always; the
+      // client-scoped poll()/pollHistory() only start once a card is
+      // opened (openClientDetail).
+      pollClients();
+      setInterval(pollClients, POLL_MS);
     </script>
   </body>
 </html>

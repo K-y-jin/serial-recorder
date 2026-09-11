@@ -159,3 +159,43 @@ class ServerState:
                 "connected": self.connected,
                 "last_seen": self.last_seen,
             }
+
+    def has_warning(self):
+        with self._lock:
+            return self.latest_event is not None
+
+
+class ClientRegistry:
+    """Holds one ServerState per connected client_id, created lazily on
+    first contact. Multiple Raspberry Pi clients can report to the same
+    server concurrently; each gets its own independent config/event/state,
+    so one client's data never overwrites another's (see CLAUDE.md: the
+    server supports multiple device clients)."""
+
+    def __init__(self, cols=DEFAULT_COLS, rows=DEFAULT_ROWS,
+                 calibration_factor=DEFAULT_CALIBRATION_FACTOR,
+                 critical_pressure=DEFAULT_CRITICAL_PRESSURE,
+                 critical_time=DEFAULT_CRITICAL_TIME, clock=time.time):
+        self._lock = threading.Lock()
+        self._defaults = dict(
+            cols=cols, rows=rows, calibration_factor=calibration_factor,
+            critical_pressure=critical_pressure, critical_time=critical_time,
+            clock=clock,
+        )
+        self._clients = {}
+
+    def get_or_create(self, client_id):
+        with self._lock:
+            state = self._clients.get(client_id)
+            if state is None:
+                state = ServerState(**self._defaults)
+                self._clients[client_id] = state
+            return state
+
+    def get(self, client_id):
+        with self._lock:
+            return self._clients.get(client_id)
+
+    def all_ids(self):
+        with self._lock:
+            return list(self._clients.keys())

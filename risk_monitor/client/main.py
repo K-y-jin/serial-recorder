@@ -29,6 +29,7 @@ import logging
 import logging.handlers
 import os
 import signal
+import socket
 import sys
 import threading
 import time
@@ -91,6 +92,8 @@ def configure_app_log_file(warning_log_dir):
 
 def build_parser():
     p = argparse.ArgumentParser(prog="client.main", description="Pressure risk monitoring client")
+    p.add_argument("--client-id", default="",
+                    help="identifies this client to the server (default: this machine's hostname)")
     p.add_argument("--port", default=DEFAULT_PORT, help=f"Serial port (default: {DEFAULT_PORT})")
     p.add_argument("--baud", type=int, default=ClientConfig.baud)
     p.add_argument("--cols", type=int, default=ClientConfig.cols)
@@ -193,30 +196,38 @@ class ClientApp:
         self.monitor = MonitorState(self.risk_acc)
         self.latest_frame = LatestFrame()
 
+        client_id = args.client_id or socket.gethostname()
+        self.client_id = client_id
+
         self.poller = ConfigPoller(
             args.server_url, args.config_path, args.poll_interval,
             self.runtime_config, timeout_s=args.http_timeout, n_cells=n_cells,
-            on_status=self.on_poll_status,
+            on_status=self.on_poll_status, client_id=client_id,
         )
         self.command_poller = CommandPoller(
             args.server_url, args.command_path, args.command_poll_interval,
             self.on_command, timeout_s=args.http_timeout, on_status=self.on_command_status,
+            client_id=client_id,
         )
         self.sender = EventSender(
             args.server_url, args.event_path, timeout_s=args.http_timeout,
             retry_delay_s=args.http_retry_delay, on_status=self.on_send_status,
+            client_id=client_id,
         )
         self.clear_sender = EventSender(
             args.server_url, args.event_clear_path, timeout_s=args.http_timeout,
             retry_delay_s=args.http_retry_delay, on_status=self.on_clear_send_status,
+            client_id=client_id,
         )
         self.image_sender = ImageSender(
             args.server_url, args.image_path, timeout_s=args.http_timeout,
             retry_delay_s=args.http_retry_delay, on_status=self.on_image_send_status,
+            client_id=client_id,
         )
         self.state_sender = StateSender(
             args.server_url, args.state_path, timeout_s=args.http_timeout,
             retry_delay_s=args.http_retry_delay, on_status=self.on_state_send_status,
+            client_id=client_id,
         )
 
         if args.dry_run:

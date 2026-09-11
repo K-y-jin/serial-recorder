@@ -19,7 +19,8 @@ class ConfigPoller:
     """
 
     def __init__(self, base_url, config_path, interval_s, runtime_config,
-                 timeout_s=5.0, n_cells=None, on_status=None, session=None):
+                 timeout_s=5.0, n_cells=None, on_status=None, session=None,
+                 client_id=""):
         self.url = base_url.rstrip("/") + config_path
         self.interval_s = interval_s
         self.runtime_config = runtime_config
@@ -27,6 +28,7 @@ class ConfigPoller:
         self.timeout_s = timeout_s
         self.on_status = on_status or (lambda ok, msg: None)
         self.session = session or requests.Session()
+        self.client_id = client_id
         self._stop = threading.Event()
         self._thread = None
 
@@ -42,7 +44,9 @@ class ConfigPoller:
         self._thread = None
 
     def poll_once(self):
-        resp = self.session.get(self.url, timeout=self.timeout_s)
+        resp = self.session.get(
+            self.url, params={"client_id": self.client_id}, timeout=self.timeout_s
+        )
         resp.raise_for_status()
         data = resp.json()
         detection_mask = None
@@ -80,13 +84,14 @@ class CommandPoller:
     """
 
     def __init__(self, base_url, command_path, interval_s, on_command,
-                 timeout_s=5.0, on_status=None, session=None):
+                 timeout_s=5.0, on_status=None, session=None, client_id=""):
         self.url = base_url.rstrip("/") + command_path
         self.interval_s = interval_s
         self.on_command = on_command
         self.timeout_s = timeout_s
         self.on_status = on_status or (lambda ok, msg: None)
         self.session = session or requests.Session()
+        self.client_id = client_id
         self._stop = threading.Event()
         self._thread = None
 
@@ -102,7 +107,9 @@ class CommandPoller:
         self._thread = None
 
     def poll_once(self):
-        resp = self.session.get(self.url, timeout=self.timeout_s)
+        resp = self.session.get(
+            self.url, params={"client_id": self.client_id}, timeout=self.timeout_s
+        )
         resp.raise_for_status()
         data = resp.json()
         command = data.get("command")
@@ -135,12 +142,13 @@ class _QueuedPoster:
     QUEUE_FULL_MSG = "event queue full; dropped oldest pending event"
 
     def __init__(self, url, timeout_s=5.0, retry_delay_s=5.0,
-                 maxsize=64, on_status=None, session=None):
+                 maxsize=64, on_status=None, session=None, client_id=""):
         self.url = url
         self.timeout_s = timeout_s
         self.retry_delay_s = retry_delay_s
         self.on_status = on_status or (lambda ok, msg: None)
         self.session = session or requests.Session()
+        self.client_id = client_id
         self._queue = queue.Queue(maxsize=maxsize)
         self._stop = threading.Event()
         self._thread = None
@@ -157,6 +165,7 @@ class _QueuedPoster:
         self._thread = None
 
     def enqueue(self, payload):
+        payload = dict(payload, client_id=self.client_id)
         try:
             self._queue.put_nowait(payload)
         except queue.Full:
@@ -196,10 +205,10 @@ class _QueuedPoster:
 
 class EventSender(_QueuedPoster):
     def __init__(self, base_url, event_path, timeout_s=5.0, retry_delay_s=5.0,
-                 maxsize=64, on_status=None, session=None):
+                 maxsize=64, on_status=None, session=None, client_id=""):
         super().__init__(base_url.rstrip("/") + event_path, timeout_s=timeout_s,
                           retry_delay_s=retry_delay_s, maxsize=maxsize,
-                          on_status=on_status, session=session)
+                          on_status=on_status, session=session, client_id=client_id)
 
 
 class StateSender(_QueuedPoster):
@@ -209,10 +218,10 @@ class StateSender(_QueuedPoster):
     superseded by a newer one."""
 
     def __init__(self, base_url, state_path, timeout_s=5.0, retry_delay_s=5.0,
-                 maxsize=1, on_status=None, session=None):
+                 maxsize=1, on_status=None, session=None, client_id=""):
         super().__init__(base_url.rstrip("/") + state_path, timeout_s=timeout_s,
                           retry_delay_s=retry_delay_s, maxsize=maxsize,
-                          on_status=on_status, session=session)
+                          on_status=on_status, session=session, client_id=client_id)
 
 
 class ImageSender(_QueuedPoster):
@@ -223,10 +232,10 @@ class ImageSender(_QueuedPoster):
     QUEUE_FULL_MSG = "image queue full; dropped oldest pending image"
 
     def __init__(self, base_url, image_path, timeout_s=5.0, retry_delay_s=5.0,
-                 maxsize=4, on_status=None, session=None):
+                 maxsize=4, on_status=None, session=None, client_id=""):
         super().__init__(base_url.rstrip("/") + image_path, timeout_s=timeout_s,
                           retry_delay_s=retry_delay_s, maxsize=maxsize,
-                          on_status=on_status, session=session)
+                          on_status=on_status, session=session, client_id=client_id)
 
     def _send(self, payload):
         image_bytes = payload["image"]

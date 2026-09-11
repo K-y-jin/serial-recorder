@@ -18,6 +18,7 @@ DEFAULT_PRESSURE_MASK_THRESHOLD = 10  # fixed, not server-configurable
 
 @dataclass(frozen=True)
 class ClientConfig:
+    client_id: str = ""
     port: str = "/dev/ttyUSB0"
     baud: int = 921600
     cols: int = 32

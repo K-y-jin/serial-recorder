@@ -164,7 +164,7 @@ def test_event_is_logged_to_warnings_file(client, tmp_path):
         "risky_idx": [0, 5],
         "pressure_mask_idx": [0, 1, 5, 6],
     })
-    log_path = tmp_path / "warnings" / "warnings.log"
+    log_path = tmp_path / "warnings" / "default" / "warnings.log"
     assert log_path.exists()
     lines = log_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
@@ -181,14 +181,14 @@ def test_mock_warning_is_tagged_and_clearable(client, tmp_path):
     })
     client.post("/api/mock-warning")
 
-    log_path = tmp_path / "warnings" / "warnings.log"
+    log_path = tmp_path / "warnings" / "default" / "warnings.log"
     lines = log_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 2
     records = [json.loads(line) for line in lines]
     assert records[0].get("is_mock") is not True
     assert records[1]["is_mock"] is True
 
-    image_dir = tmp_path / "warnings" / "images"
+    image_dir = tmp_path / "warnings" / "default" / "images"
     mock_images = list(image_dir.glob("mock_*.png"))
     assert len(mock_images) == 1
 
@@ -221,7 +221,7 @@ def test_image_is_saved_to_warnings_dir(client, tmp_path):
     )
     assert resp.status_code == 200
 
-    image_dir = tmp_path / "warnings" / "images"
+    image_dir = tmp_path / "warnings" / "default" / "images"
     saved = list(image_dir.glob("*.png"))
     assert len(saved) == 1
     assert saved[0].read_bytes() == b"\x89PNGfake"
@@ -237,7 +237,7 @@ def test_image_status_saved_when_state_known(client, tmp_path):
         content_type="multipart/form-data",
     )
 
-    image_dir = tmp_path / "warnings" / "images"
+    image_dir = tmp_path / "warnings" / "default" / "images"
     statuses = list(image_dir.glob("*.json"))
     assert len(statuses) == 1
     status = json.loads(statuses[0].read_text(encoding="utf-8"))
@@ -249,7 +249,7 @@ def test_image_status_saved_when_state_known(client, tmp_path):
 def test_state_request_saves_status_image(client, tmp_path):
     client.post("/state", json={"timestamp": 1.0, "pressure": [0] * 16})
 
-    image_dir = tmp_path / "warnings" / "images"
+    image_dir = tmp_path / "warnings" / "default" / "images"
     pngs = list(image_dir.glob("status_*.png"))
     jsons = list(image_dir.glob("status_*.json"))
     assert len(pngs) == 1
@@ -263,7 +263,7 @@ def test_state_request_saves_status_image(client, tmp_path):
 def test_mock_warning_status_is_saved_and_cleared(client, tmp_path):
     client.post("/api/mock-warning")
 
-    image_dir = tmp_path / "warnings" / "images"
+    image_dir = tmp_path / "warnings" / "default" / "images"
     mock_statuses = list(image_dir.glob("mock_*.json"))
     assert len(mock_statuses) == 1
     status = json.loads(mock_statuses[0].read_text(encoding="utf-8"))
@@ -281,3 +281,38 @@ def test_client_requests_touch_connection_state(client):
     client.get("/config")
     data = client.get("/api/latest").get_json()
     assert data["last_seen"] is not None
+
+
+def test_multiple_clients_do_not_share_state(client, tmp_path):
+    client.put("/config?client_id=a", json={"critical_pressure": 10.0})
+    client.put("/config?client_id=b", json={"critical_pressure": 99.0})
+
+    a_config = client.get("/config?client_id=a").get_json()
+    b_config = client.get("/config?client_id=b").get_json()
+    assert a_config["critical_pressure"] == 10.0
+    assert b_config["critical_pressure"] == 99.0
+
+    client.post("/event?client_id=a", json={
+        "accumulated_time": 90.0, "risky_idx": [1], "pressure_mask_idx": [1],
+    })
+    a_latest = client.get("/api/latest?client_id=a").get_json()
+    b_latest = client.get("/api/latest?client_id=b").get_json()
+    assert a_latest["has_warning"] is True
+    assert b_latest["has_warning"] is False
+
+    assert (tmp_path / "warnings" / "a" / "warnings.log").exists()
+    assert not (tmp_path / "warnings" / "b" / "warnings.log").exists()
+
+
+def test_api_clients_lists_known_clients(client):
+    client.get("/config?client_id=a")
+    client.get("/config?client_id=b")
+    client.post("/event?client_id=b", json={
+        "accumulated_time": 90.0, "risky_idx": [1], "pressure_mask_idx": [1],
+    })
+
+    data = client.get("/api/clients").get_json()
+    by_id = {c["client_id"]: c for c in data["clients"]}
+    assert set(by_id) == {"a", "b"}
+    assert by_id["a"]["has_warning"] is False
+    assert by_id["b"]["has_warning"] is True
