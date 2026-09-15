@@ -45,9 +45,11 @@ JSON/form field on POST; defaults to "default" if omitted):
                         frame + risky-cell overlay, not accumulated
   GET  /image/latest -> the most recently received warning snapshot PNG
   GET  /dashboard   -> HTML dashboard
-  GET  /api/clients -> [{"client_id", "connected", "last_seen", "has_warning"}, ...]
-                        for every client that has ever contacted the server --
-                        powers the dashboard's client grid
+  GET  /api/clients -> [{"client_id", "display_name", "connected", "last_seen",
+                        "has_warning"}, ...] for every client that has ever
+                        contacted the server -- powers the dashboard's client grid
+  POST /api/clients/rename -> {"name"}: sets (or, if empty, clears) the
+                        dashboard-assigned display name for this client_id
   GET  /api/latest  -> JSON snapshot for the dashboard poller, including
                         "connected"/"last_seen" client connection status
   GET  /api/meta    -> {"warning_dir", "server_ip"}, read-only server-side
@@ -82,6 +84,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 
 from client.image import render_risk_image
 from server.alert import fire_alert
+from server.client_names import ClientNameStore
 from server.config_store import ConfigStore
 from server.connection_monitor import DEFAULT_TIMEOUT_S as DEFAULT_CLIENT_TIMEOUT_S
 from server.connection_monitor import ConnectionMonitor
@@ -189,6 +192,7 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
     )
     connection_monitor = ConnectionMonitor(registry, timeout_s=client_timeout_s)
     connection_monitor.start()
+    name_store = ClientNameStore(warning_dir)
 
     def _client_id():
         client_id = request.args.get("client_id")
@@ -474,11 +478,19 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
                 continue
             clients.append({
                 "client_id": client_id,
+                "display_name": name_store.get(client_id),
                 "connected": client_state.is_connected(),
                 "last_seen": client_state.get_last_seen(),
                 "has_warning": client_state.has_warning(),
             })
         return jsonify({"clients": clients})
+
+    @app.post("/api/clients/rename")
+    def rename_client():
+        client_id = _client_id()
+        body = request.get_json(force=True)
+        display_name = name_store.set(client_id, body.get("name", ""))
+        return jsonify({"status": "ok", "client_id": client_id, "display_name": display_name})
 
     @app.get("/api/meta")
     def api_meta():
@@ -552,6 +564,7 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
             )
         return jsonify({
             "cols": cols,
+            "display_name": name_store.get(client_id),
             "rows": snap["rows"],
             "mask_excluded_cells": idx_to_rowcol(snap.get("mask_excluded_idx", []), cols),
             "has_warning": latest_event is not None,

@@ -595,6 +595,40 @@
         font-weight: 700;
         margin-bottom: 8px;
         word-break: break-all;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .clientCard .clientCardId .clientCardIdText {
+        flex: 1;
+        min-width: 0;
+        word-break: break-all;
+      }
+      .clientCardRenameBtn {
+        flex: none;
+        background: none;
+        border: none;
+        color: #a0a4ab;
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 4px;
+      }
+      .clientCardRenameBtn:hover {
+        background: #2a2c30;
+        color: #e6e6e6;
+      }
+      .clientCardNameInput {
+        flex: 1;
+        min-width: 0;
+        background: #0a0b0d;
+        border: 1px solid #565a63;
+        border-radius: 4px;
+        color: #e6e6e6;
+        font-size: 15px;
+        font-weight: 700;
+        padding: 2px 6px;
       }
       .clientCard .clientCardThumbWrap {
         background: #0a0b0d;
@@ -657,6 +691,21 @@
         color: #a0a4ab;
         font-weight: 400;
         font-size: 18px;
+      }
+      #detailRenameBtn {
+        background: none;
+        border: none;
+        color: #a0a4ab;
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 4px;
+        margin-left: 4px;
+      }
+      #detailRenameBtn:hover {
+        background: #2a2c30;
+        color: #e6e6e6;
       }
     </style>
   </head>
@@ -845,7 +894,15 @@
 
     <div id="content" style="display: none">
       <button id="backToGridBtn">← 목록으로</button>
-      <h1>Pressure Risk Dashboard <span id="detailClientId"></span></h1>
+      <h1>
+        Pressure Risk Dashboard
+        <span id="detailClientId"
+          >- <span id="detailName"></span
+          ><button id="detailRenameBtn" type="button" title="이름 변경">
+            ✎
+          </button></span
+        >
+      </h1>
       <div id="status" class="ok">대기 중</div>
       <div id="connStatus" class="unknown">장치 상태 확인 중</div>
       <div id="meta">이벤트 없음</div>
@@ -895,6 +952,20 @@
       );
       const contentEl = document.getElementById("content");
       const detailClientIdEl = document.getElementById("detailClientId");
+      const detailNameEl = document.getElementById("detailName");
+      const detailRenameBtn = document.getElementById("detailRenameBtn");
+      detailRenameBtn.addEventListener("click", async () => {
+        if (!currentClientId) return;
+        const current = detailNameEl.textContent || currentClientId;
+        const name = window.prompt("클라이언트 이름", current);
+        if (name === null) return;
+        try {
+          const displayName = await submitRename(currentClientId, name);
+          detailNameEl.textContent = displayName || currentClientId;
+        } catch (e) {
+          /* ignore -- next poll re-renders with the server's value */
+        }
+      });
 
       const prevClientHasWarning = new Map(); // client_id -> last known has_warning, so a new warning (false -> true) is detected per client and alerted exactly once
 
@@ -931,11 +1002,88 @@
               : "확인 중";
 
         card.innerHTML =
-          `<div class="clientCardId">${c.client_id}</div>` +
           `<div class="clientCardThumbWrap"><img loading="lazy" onerror="this.remove()" src="/image/latest?client_id=${encodeURIComponent(c.client_id)}&t=${Date.now()}"></div>` +
           `<span class="clientCardBadge ${badgeClass}">${badgeText}</span>` +
           `<div class="clientCardLastSeen">마지막 수신: ${formatLastSeen(c.last_seen)}</div>`;
+        card.prepend(renderClientIdHeader(c));
         return card;
+      }
+
+      // Builds the editable name row shown at the top of a client card --
+      // built via DOM (not innerHTML) so the rename button's click handler
+      // can stopPropagation and swap in a text input without re-triggering
+      // the card's own "open detail" click listener.
+      function renderClientIdHeader(c) {
+        const displayName = c.display_name || c.client_id;
+        const row = document.createElement("div");
+        row.className = "clientCardId";
+
+        const textEl = document.createElement("span");
+        textEl.className = "clientCardIdText";
+        textEl.textContent = displayName;
+        textEl.title = c.client_id;
+
+        const renameBtn = document.createElement("button");
+        renameBtn.className = "clientCardRenameBtn";
+        renameBtn.type = "button";
+        renameBtn.title = "이름 변경";
+        renameBtn.textContent = "✎";
+        renameBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          startRenameEdit(row, textEl, c);
+        });
+
+        row.appendChild(textEl);
+        row.appendChild(renameBtn);
+        return row;
+      }
+
+      // Sends the new display name to the server; returns the name the
+      // server actually stored (null clears back to the raw client_id).
+      async function submitRename(clientId, name) {
+        const resp = await fetch(
+          `/api/clients/rename?client_id=${encodeURIComponent(clientId)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name }),
+          },
+        );
+        const data = await resp.json();
+        return data.display_name;
+      }
+
+      function startRenameEdit(row, textEl, c) {
+        const input = document.createElement("input");
+        input.className = "clientCardNameInput";
+        input.value = c.display_name || c.client_id;
+        input.addEventListener("click", (e) => e.stopPropagation());
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") input.blur();
+          if (e.key === "Escape") {
+            input.removeEventListener("blur", commit);
+            row.replaceChild(textEl, input);
+          }
+        });
+        const commit = async () => {
+          const name = input.value.trim();
+          row.replaceChild(textEl, input);
+          if (name === (c.display_name || c.client_id)) return;
+          try {
+            const displayName = await submitRename(c.client_id, name);
+            c.display_name = displayName;
+            textEl.textContent = displayName || c.client_id;
+            if (c.client_id === currentClientId) {
+              detailNameEl.textContent = displayName || c.client_id;
+            }
+          } catch (e) {
+            /* ignore -- next poll re-renders with the server's value */
+          }
+        };
+        input.addEventListener("blur", commit);
+        row.replaceChild(input, textEl);
+        input.focus();
+        input.select();
       }
 
       function renderClientGrid(clients) {
@@ -970,7 +1118,7 @@
 
       function openClientDetail(clientId) {
         currentClientId = clientId;
-        detailClientIdEl.textContent = `- ${clientId}`;
+        detailNameEl.textContent = clientId;
         clientGridScreen.style.display = "none";
         contentEl.style.display = "block";
         loadConfig();
@@ -1752,6 +1900,10 @@
         try {
           const resp = await fetch(withClient("/api/latest"));
           const data = await resp.json();
+          if (currentClientId) {
+            detailNameEl.textContent = data.display_name || currentClientId;
+            detailNameEl.title = currentClientId;
+          }
           drawGrid(data);
           updateStatus(data);
           updateConnStatus(data);
