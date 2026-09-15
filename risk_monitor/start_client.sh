@@ -34,6 +34,16 @@ if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     exit 1
 fi
 
+VENV_DIR="$SCRIPT_DIR/venv"
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+    echo "venv not found at $VENV_DIR -- creating it" >&2
+    python3 -m venv "$VENV_DIR"
+    source "$VENV_DIR/bin/activate"
+    pip install -r "$SCRIPT_DIR/client/requirements.txt"
+else
+    source "$VENV_DIR/bin/activate"
+fi
+
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 nohup "$PYTHON_BIN" -m client.main --server-url "http://${SERVER_IP}:5000" "$@" >> "$LOG_FILE" 2>&1 &
