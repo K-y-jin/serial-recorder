@@ -427,6 +427,7 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
         if pressure and len(pressure) == config["cols"] * config["rows"]:
             received_at = time.time()
             image_bytes = render_risk_image(pressure, config["rows"], config["cols"], [])
+            state.record_image(image_bytes)
             entry["warning_store"].save_image(image_bytes, received_at, is_status=True)
             entry["warning_store"].save_status(
                 pressure, config["cols"], config["rows"], received_at, is_status=True
@@ -587,8 +588,8 @@ def build_parser():
     p = argparse.ArgumentParser(prog="server.app", description="Pressure risk monitoring server")
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--port", type=int, default=5000)
-    p.add_argument("--cols", type=int, default=32)
-    p.add_argument("--rows", type=int, default=64)
+    p.add_argument("--cols", type=int, default=DEFAULT_COLS)
+    p.add_argument("--rows", type=int, default=DEFAULT_ROWS)
     p.add_argument("--warning-dir", default=DEFAULT_WARNING_DIR,
                     help="directory to log warnings.log and images/ into")
     p.add_argument("--client-timeout", type=float, default=DEFAULT_CLIENT_TIMEOUT_S,

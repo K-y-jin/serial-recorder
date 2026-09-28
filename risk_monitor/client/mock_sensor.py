@@ -42,6 +42,11 @@ import serial
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
+_REPO_ROOT = os.path.dirname(_PROJECT_ROOT)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from common.config import DEFAULT_COLS, DEFAULT_ROWS  # noqa: E402
 
 DEFAULT_CSV = os.path.join(os.path.dirname(__file__), "dumpy_data", "Calib31.CSV")
 
@@ -143,8 +148,8 @@ def build_parser():
     p.add_argument("--link", default="/dev/ttyUSB0",
                     help="device path the consumer (SerialReader) will open")
     p.add_argument("--baud", type=int, default=921600)
-    p.add_argument("--cols", type=int, default=32)
-    p.add_argument("--rows", type=int, default=64)
+    p.add_argument("--cols", type=int, default=DEFAULT_COLS)
+    p.add_argument("--rows", type=int, default=DEFAULT_ROWS)
     p.add_argument("--header", default="A55A", help="hex string, e.g. A55A")
     p.add_argument("--pre", type=int, default=6)
     p.add_argument("--post", type=int, default=2)

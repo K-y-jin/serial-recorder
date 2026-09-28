@@ -3,10 +3,22 @@ server-managed runtime thresholds (calibration_factor, critical_pressure,
 critical_time) and detection mask, which are refreshed by periodic
 polling."""
 import os
+import sys
 import threading
 from dataclasses import dataclass
 
 import numpy as np
+
+# common/config.py (the shared sensor grid size) sits one level above
+# risk_monitor/, which isn't on sys.path when this module is imported
+# directly (e.g. by tests) rather than via client/main.py, which does
+# this same insert.
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = os.path.dirname(_APP_ROOT)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from common.config import DEFAULT_COLS, DEFAULT_ROWS  # noqa: E402
 
 DEFAULT_WARNING_LOG_DIR = os.path.join(os.path.expanduser("~"), "risk_monitor_logs", "client_warnings")
 
@@ -21,8 +33,8 @@ class ClientConfig:
     client_id: str = ""
     port: str = "/dev/ttyUSB0"
     baud: int = 921600
-    cols: int = 32
-    rows: int = 64
+    cols: int = DEFAULT_COLS
+    rows: int = DEFAULT_ROWS
     header_hex: str = "A55A"
     pre_skip: int = 6
     post_skip: int = 2

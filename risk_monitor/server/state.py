@@ -2,15 +2,28 @@
 pending monitor command, latest/history risk events, and the latest
 reported pressure state. A single global mutation lock is enough at this
 scale (mock_server/server.py uses the same pattern)."""
+import os
+import sys
 import threading
 import time
 from collections import deque
 
+# The sensor grid size (DEFAULT_COLS/DEFAULT_ROWS) lives in the repo-root
+# common/config.py, shared with pressure_recorder and the client, so it
+# only ever needs changing in one place. common/ sits one level above
+# risk_monitor/, which isn't on sys.path when the server is run as
+# `python -m server.app` from within risk_monitor/ (unlike client/main.py,
+# which already does this same insert).
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = os.path.dirname(_APP_ROOT)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from common.config import DEFAULT_COLS, DEFAULT_ROWS  # noqa: E402
+
 DEFAULT_CALIBRATION_FACTOR = 0.4755
 DEFAULT_CRITICAL_PRESSURE = 32.0
 DEFAULT_CRITICAL_TIME = 90.0
-DEFAULT_COLS = 32
-DEFAULT_ROWS = 64
 EVENT_HISTORY_MAXLEN = 50
 
 
@@ -63,6 +76,12 @@ class ServerState:
         with self._lock:
             self.latest_event = record
             self.event_history.append(record)
+            # A new event has its own pressure_mask_idx silhouette; drop any
+            # earlier "현재 상태 요청" snapshot so the dashboard grid draws
+            # *this* event's silhouette instead of overlaying its risky
+            # cells on a stale, unrelated pressure snapshot (see
+            # clear_latest_state).
+            self.latest_state = None
         return record
 
     def clear_event(self, cleared_idx):
