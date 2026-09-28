@@ -394,6 +394,26 @@
         font-size: 18px;
         margin: 0 0 16px;
       }
+      #settingsTabBar {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .settingsTabBtn {
+        flex: 1;
+        background: #14161a;
+        color: #a0a4ab;
+        border: 1px solid #333;
+        border-radius: 4px;
+        padding: 8px 10px;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      .settingsTabBtn.active {
+        background: #2a2c30;
+        color: #e6e6e6;
+        border-color: #565a63;
+      }
       #settingsPanel h3 {
         font-size: 16px;
         color: #a0a4ab;
@@ -556,16 +576,16 @@
       }
       #clientGrid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(180px, 1fr));
+        grid-template-columns: repeat(4, minmax(260px, 1fr));
         grid-template-rows: repeat(2, auto);
-        gap: 16px;
-        max-width: 1100px;
+        gap: 24px;
+        max-width: 1500px;
       }
       .clientCard {
         background: #1c1e23;
         border: 2px solid #333;
-        border-radius: 10px;
-        padding: 14px;
+        border-radius: 12px;
+        padding: 20px;
         cursor: pointer;
         transition: border-color 0.15s ease;
       }
@@ -634,11 +654,11 @@
         background: #0a0b0d;
         border: 1px solid #2a2c30;
         border-radius: 6px;
-        height: 90px;
+        height: 150px;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
         overflow: hidden;
       }
       .clientCard .clientCardThumbWrap img {
@@ -668,6 +688,20 @@
         font-size: 13px;
         color: #a0a4ab;
         margin-top: 6px;
+      }
+      .clientCard .clientCardThresholds {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .clientCard .clientCardThresholdLabel {
+        font-size: 13px;
+        color: #c9ccd1;
+        background: #14161a;
+        border: 1px solid #2a2c30;
+        border-radius: 999px;
+        padding: 3px 9px;
       }
       #clientGridOverflow {
         margin-top: 12px;
@@ -715,114 +749,127 @@
     <div id="settingsPanel">
       <h2>설정</h2>
 
-      <div class="field">
-        <button
-          id="resetDefaultsBtn"
-          class="settingsActionBtn"
-          style="border-color: #ff3b3b; color: #ff8080"
-        >
-          모든 설정 기본값으로 초기화
+      <div id="settingsTabBar" style="display: none">
+        <button type="button" class="settingsTabBtn" data-tab="global">
+          전역 설정
+        </button>
+        <button type="button" class="settingsTabBtn" data-tab="individual">
+          개별 설정
         </button>
       </div>
 
-      <div class="field">
-        <label for="pollInput">폴링 주기 (ms)</label>
-        <input type="number" id="pollInput" min="200" step="100" />
+      <div id="settingsTabGlobal" class="settingsTab">
+        <div class="field">
+          <label for="pollInput">폴링 주기 (ms)</label>
+          <input type="number" id="pollInput" min="200" step="100" />
+        </div>
+
+        <h3>시스템 설정</h3>
+        <div class="field">
+          <label for="volumeInput"
+            >알림 소리 크기 (<span id="volumeValue">100</span>%)</label
+          >
+          <input type="range" id="volumeInput" min="0" max="100" step="1" />
+        </div>
+        <div class="field">
+          <label for="soundStyleInput">알림 소리 종류</label>
+          <select id="soundStyleInput">
+            <option value="beep">비프음 (짧은 단음)</option>
+            <option value="double">더블 비프 (두 번 울림)</option>
+            <option value="chime">차임벨 (띠리링)</option>
+            <option value="siren">사이렌 (오르내림, 긴 경고음)</option>
+          </select>
+          <button type="button" id="soundTestBtn" class="settingsActionBtn">
+            소리 테스트
+          </button>
+        </div>
+        <div class="field">
+          <label>데이터 저장 경로</label>
+          <div id="warningDirValue" class="readOnlyValue">불러오는 중...</div>
+        </div>
+        <div class="field">
+          <label>서버 IP 주소 (현재 무선랜)</label>
+          <div id="serverIpValue" class="readOnlyValue">불러오는 중...</div>
+        </div>
       </div>
 
-      <h3>위험 감지 설정</h3>
-      <div class="field">
-        <label for="criticalPressureInput">위험 압력 기준 (mmHg)</label>
-        <input type="number" id="criticalPressureInput" min="0" step="0.1" />
-      </div>
-      <div class="field">
-        <label for="criticalTimeInput">위험 지속 시간 기준 (min)</label>
-        <input type="number" id="criticalTimeInput" min="0" step="0.1" />
-      </div>
-      <div class="field">
-        <button id="saveDetectionBtn" class="settingsSaveBtn">저장</button>
+      <div id="settingsTabIndividual" class="settingsTab" style="display: none">
+        <h3>위험 감지 설정</h3>
+        <div class="field">
+          <label for="criticalPressureInput">위험 압력 기준 (mmHg)</label>
+          <input type="number" id="criticalPressureInput" min="0" step="0.1" />
+        </div>
+        <div class="field">
+          <label for="criticalTimeInput">위험 지속 시간 기준 (min)</label>
+          <input type="number" id="criticalTimeInput" min="0" step="0.1" />
+        </div>
+        <div class="field">
+          <button id="saveDetectionBtn" class="settingsSaveBtn">저장</button>
+        </div>
+
+        <h3>마스크 설정</h3>
+        <div id="maskHint">
+          센서 데이터가 배경에 표시됩니다("현재 상태 요청"으로 갱신). 드래그하여
+          감지에서 제외할 영역을 칠하세요.
+        </div>
+        <div class="field">
+          <canvas id="maskCanvas"></canvas>
+        </div>
+        <div class="field">
+          <button id="saveMaskBtn" class="settingsSaveBtn">마스크 저장</button>
+        </div>
+        <div class="field">
+          <button id="resetMaskBtn" class="settingsActionBtn">
+            전체 초기화 (마스크 없음)
+          </button>
+        </div>
+
+        <h3>개발자 설정</h3>
+        <div class="field">
+          <label for="calibrationInput">calibration factor</label>
+          <input type="number" id="calibrationInput" min="0" step="0.01" />
+        </div>
+        <div class="field">
+          <label for="rowsInput">sensor rows</label>
+          <input type="number" id="rowsInput" min="1" step="1" />
+        </div>
+        <div class="field">
+          <label for="colsInput">sensor cols</label>
+          <input type="number" id="colsInput" min="1" step="1" />
+        </div>
+        <div class="field">
+          <button id="saveDevBtn" class="settingsSaveBtn">저장</button>
+        </div>
+        <div class="field">
+          <button id="requestStatusBtn" class="settingsActionBtn">
+            현재 상태(STATUS) 요청
+          </button>
+        </div>
+        <div class="field">
+          <button id="mockWarningBtn" class="settingsActionBtn">
+            모의 경고 발생
+          </button>
+        </div>
+        <div class="field">
+          <button
+            id="clearMockWarningsBtn"
+            class="settingsActionBtn"
+            style="border-color: #ff3b3b; color: #ff8080"
+          >
+            모의 경고 기록 지우기
+          </button>
+        </div>
+        <div class="field">
+          <button
+            id="resetDefaultsBtn"
+            class="settingsActionBtn"
+            style="border-color: #ff3b3b; color: #ff8080"
+          >
+            이 클라이언트 설정 기본값으로 초기화
+          </button>
+        </div>
       </div>
 
-      <h3>마스크 설정</h3>
-      <div id="maskHint">
-        센서 데이터가 배경에 표시됩니다("현재 상태 요청"으로 갱신). 드래그하여
-        감지에서 제외할 영역을 칠하세요.
-      </div>
-      <div class="field">
-        <canvas id="maskCanvas"></canvas>
-      </div>
-      <div class="field">
-        <button id="saveMaskBtn" class="settingsSaveBtn">마스크 저장</button>
-      </div>
-      <div class="field">
-        <button id="resetMaskBtn" class="settingsActionBtn">
-          전체 초기화 (마스크 없음)
-        </button>
-      </div>
-
-      <h3>시스템 설정</h3>
-      <div class="field">
-        <label for="volumeInput"
-          >알림 소리 크기 (<span id="volumeValue">100</span>%)</label
-        >
-        <input type="range" id="volumeInput" min="0" max="100" step="1" />
-      </div>
-      <div class="field">
-        <label for="soundStyleInput">알림 소리 종류</label>
-        <select id="soundStyleInput">
-          <option value="beep">비프음 (짧은 단음)</option>
-          <option value="double">더블 비프 (두 번 울림)</option>
-          <option value="chime">차임벨 (띠리링)</option>
-          <option value="siren">사이렌 (오르내림, 긴 경고음)</option>
-        </select>
-        <button type="button" id="soundTestBtn" class="settingsActionBtn">
-          소리 테스트
-        </button>
-      </div>
-      <div class="field">
-        <label>데이터 저장 경로</label>
-        <div id="warningDirValue" class="readOnlyValue">불러오는 중...</div>
-      </div>
-
-      <h3>개발자 설정</h3>
-      <div class="field">
-        <label>서버 IP 주소 (현재 무선랜)</label>
-        <div id="serverIpValue" class="readOnlyValue">불러오는 중...</div>
-      </div>
-      <div class="field">
-        <label for="calibrationInput">calibration factor</label>
-        <input type="number" id="calibrationInput" min="0" step="0.01" />
-      </div>
-      <div class="field">
-        <label for="rowsInput">sensor rows</label>
-        <input type="number" id="rowsInput" min="1" step="1" />
-      </div>
-      <div class="field">
-        <label for="colsInput">sensor cols</label>
-        <input type="number" id="colsInput" min="1" step="1" />
-      </div>
-      <div class="field">
-        <button id="saveDevBtn" class="settingsSaveBtn">저장</button>
-      </div>
-      <div class="field">
-        <button id="requestStatusBtn" class="settingsActionBtn">
-          현재 상태(STATUS) 요청
-        </button>
-      </div>
-      <div class="field">
-        <button id="mockWarningBtn" class="settingsActionBtn">
-          모의 경고 발생
-        </button>
-      </div>
-      <div class="field">
-        <button
-          id="clearMockWarningsBtn"
-          class="settingsActionBtn"
-          style="border-color: #ff3b3b; color: #ff8080"
-        >
-          모의 경고 기록 지우기
-        </button>
-      </div>
       <div id="settingsMsg" class="settingsMsg"></div>
     </div>
 
@@ -1004,7 +1051,11 @@
         card.innerHTML =
           `<div class="clientCardThumbWrap"><img loading="lazy" onerror="this.remove()" src="/image/latest?client_id=${encodeURIComponent(c.client_id)}&t=${Date.now()}"></div>` +
           `<span class="clientCardBadge ${badgeClass}">${badgeText}</span>` +
-          `<div class="clientCardLastSeen">마지막 수신: ${formatLastSeen(c.last_seen)}</div>`;
+          `<div class="clientCardLastSeen">마지막 수신: ${formatLastSeen(c.last_seen)}</div>` +
+          `<div class="clientCardThresholds">` +
+          `<span class="clientCardThresholdLabel">위험 압력: ${c.critical_pressure} mmHg</span>` +
+          `<span class="clientCardThresholdLabel">위험 지속 시간: ${c.critical_time} min</span>` +
+          `</div>`;
         card.prepend(renderClientIdHeader(c));
         return card;
       }
@@ -1128,6 +1179,7 @@
         poll();
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(poll, POLL_MS);
+        setSettingsTab("individual");
       }
 
       function closeClientDetail() {
@@ -1136,7 +1188,37 @@
         pollTimer = null;
         contentEl.style.display = "none";
         clientGridScreen.style.display = "block";
+        setSettingsTab("global");
       }
+
+      // -- 설정 패널: 카드를 선택하지 않은 상태에서는 전역 설정만, 카드를
+      // 선택한 상태에서는 개별 설정(위험 감지/마스크/개발자 설정)을 기본으로
+      // 보여준다. 개별 탭의 버튼들은 모두 currentClientId를 대상으로 동작하므로,
+      // 선택된 클라이언트가 없을 때는 개별 탭 자체를 숨겨 실수로 "default"
+      // 클라이언트 항목이 생성되는 것을 막는다.
+      const settingsTabBar = document.getElementById("settingsTabBar");
+      const settingsTabGlobalEl = document.getElementById("settingsTabGlobal");
+      const settingsTabIndividualEl = document.getElementById(
+        "settingsTabIndividual",
+      );
+      const settingsTabBtns = document.querySelectorAll(".settingsTabBtn");
+      let settingsTab = "global";
+
+      function setSettingsTab(tab) {
+        if (tab === "individual" && !currentClientId) tab = "global";
+        settingsTab = tab;
+        settingsTabBar.style.display = currentClientId ? "flex" : "none";
+        settingsTabGlobalEl.style.display = tab === "global" ? "block" : "none";
+        settingsTabIndividualEl.style.display =
+          tab === "individual" ? "block" : "none";
+        settingsTabBtns.forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.tab === tab);
+        });
+      }
+
+      settingsTabBtns.forEach((btn) => {
+        btn.addEventListener("click", () => setSettingsTab(btn.dataset.tab));
+      });
 
       document
         .getElementById("backToGridBtn")

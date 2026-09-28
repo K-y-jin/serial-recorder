@@ -476,12 +476,15 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
             client_state = registry.get(client_id)
             if client_state is None:
                 continue
+            config = client_state.get_config()
             clients.append({
                 "client_id": client_id,
                 "display_name": name_store.get(client_id),
                 "connected": client_state.is_connected(),
                 "last_seen": client_state.get_last_seen(),
                 "has_warning": client_state.has_warning(),
+                "critical_pressure": config["critical_pressure"],
+                "critical_time": config["critical_time"],
             })
         return jsonify({"clients": clients})
 

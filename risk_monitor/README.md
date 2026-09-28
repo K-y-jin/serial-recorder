@@ -53,11 +53,15 @@
    ```bash
    ./set_server_ip.sh <서버-IP>
    ```
-3. 클라이언트 시작
+3. 클라이언트 ID 설정 (대시보드에 표시될 이름, 장치마다 고유하게 지정)
+   ```bash
+   ./set_client_id.sh <client-id>
+   ```
+4. 클라이언트 시작
    ```bash
    ./start_client.sh
    ```
-4. 클라이언트 중지
+5. 클라이언트 중지
    ```bash
    ./stop_client.sh
    ```
