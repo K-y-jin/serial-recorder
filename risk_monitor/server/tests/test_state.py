@@ -19,8 +19,8 @@ def test_default_config():
     assert cfg["calibration_factor"] == 0.4755
     assert cfg["critical_pressure"] == 32.0
     assert cfg["critical_time"] == 90.0
-    assert cfg["cols"] == 32
-    assert cfg["rows"] == 64
+    assert cfg["cols"] == 64
+    assert cfg["rows"] == 32
 
 
 def test_update_config_merges():
@@ -69,8 +69,8 @@ def test_snapshot_has_no_warning_before_any_event():
     state = ServerState()
     snap = state.snapshot()
     assert snap["latest_event"] is None
-    assert snap["cols"] == 32
-    assert snap["rows"] == 64
+    assert snap["cols"] == 64
+    assert snap["rows"] == 32
 
 
 def test_snapshot_reflects_latest_event_and_state():
