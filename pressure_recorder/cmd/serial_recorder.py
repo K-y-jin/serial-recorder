@@ -15,7 +15,7 @@ enough not to fall behind in the first place.
 
 Usage:
     python cmd/serial_recorder.py [--port /dev/ttyUSB0] [--baud 921600]
-                                   [--header A55A] [--hex] [--full]
+                                   [--header A55A01060801] [--hex] [--full]
                                    [--every 1]
 """
 import argparse
@@ -28,8 +28,13 @@ import time
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
+_REPO_ROOT = os.path.dirname(_PROJECT_ROOT)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 import serial
+
+from common.config import DEFAULT_HEADER_HEX
 
 RECONNECT_DELAY_S = 1.0
 READ_CHUNK = 4096
@@ -137,7 +142,7 @@ def build_parser():
     p = argparse.ArgumentParser(prog="serial_recorder", description="Print raw serial packets")
     p.add_argument("--port", default="/dev/ttyUSB0")
     p.add_argument("--baud", type=int, default=921600)
-    p.add_argument("--header", default="A55A", help="hex string, e.g. A55A")
+    p.add_argument("--header", default=DEFAULT_HEADER_HEX, help="hex string, e.g. A55A01060801")
     p.add_argument("--hex", action="store_true",
                     help="print as hex bytes instead of raw repr")
     p.add_argument("--full", action="store_true",

@@ -3,7 +3,7 @@
 Usage:
     python cmd/start.py [--port /dev/ttyUSB0] [--outdir DIR]
                         [--baud 921600] [--cols 32] [--rows 64]
-                        [--header A55A] [--pre 6] [--post 2]
+                        [--header A55A01060801] [--pre 6] [--post 2]
                         [--interval 1.0]
                         [--upload] [--upload-interval 60]
                         [--wandb-project NAME] [--wandb-entity NAME]

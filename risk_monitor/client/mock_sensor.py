@@ -23,7 +23,7 @@ Usage:
     python -m client.mock_sensor [--csv client/dumpy_data/Calib31.CSV]
                                   [--link /dev/ttyUSB0] [--baud 921600]
                                   [--cols 32] [--rows 64]
-                                  [--header A55A] [--pre 6] [--post 2]
+                                  [--header A55A01060801] [--pre 6] [--post 2]
                                   [--fps 30] [--seed 1234]
 """
 import argparse
@@ -46,7 +46,7 @@ _REPO_ROOT = os.path.dirname(_PROJECT_ROOT)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from common.config import DEFAULT_COLS, DEFAULT_ROWS  # noqa: E402
+from common.config import DEFAULT_COLS, DEFAULT_HEADER_HEX, DEFAULT_ROWS  # noqa: E402
 
 DEFAULT_CSV = os.path.join(os.path.dirname(__file__), "dumpy_data", "Calib31.CSV")
 
@@ -150,7 +150,7 @@ def build_parser():
     p.add_argument("--baud", type=int, default=921600)
     p.add_argument("--cols", type=int, default=DEFAULT_COLS)
     p.add_argument("--rows", type=int, default=DEFAULT_ROWS)
-    p.add_argument("--header", default="A55A", help="hex string, e.g. A55A")
+    p.add_argument("--header", default=DEFAULT_HEADER_HEX, help="hex string, e.g. A55A01060801")
     p.add_argument("--pre", type=int, default=6)
     p.add_argument("--post", type=int, default=2)
     p.add_argument("--fps", type=float, default=30.0)

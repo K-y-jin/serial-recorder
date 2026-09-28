@@ -6,7 +6,7 @@ Connects to the sensor, averages N frames, and saves the result as
 Usage:
     python cmd/calibration.py [--port /dev/ttyUSB0] [--samples 10]
                               [--baud 921600] [--cols 32] [--rows 64]
-                              [--header A55A] [--pre 6] [--post 2]
+                              [--header A55A01060801] [--pre 6] [--post 2]
                               [--outpath baseline_name]
 """
 import argparse

@@ -16,7 +16,7 @@ send attempt's success/failure is logged to send.log.
 
 Usage:
     python -m client.main [--port /dev/ttyUSB0] [--baud 921600]
-                           [--cols 32] [--rows 64] [--header A55A]
+                           [--cols 32] [--rows 64] [--header A55A01060801]
                            [--pre 6] [--post 2]
                            [--server-url http://localhost:5000]
                            [--poll-interval 60] [--command-poll-interval 2]
