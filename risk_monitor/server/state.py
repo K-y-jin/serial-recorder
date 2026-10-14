@@ -103,6 +103,9 @@ class ServerState:
             ]
             if not remaining:
                 self.latest_event = None
+                # The snapshot belongs to the warning that just ended; don't
+                # keep serving it from /image/latest.
+                self.latest_image = None
                 return None
             updated = dict(self.latest_event)
             updated["risky_idx"] = [i for i, _ in remaining]
@@ -123,6 +126,8 @@ class ServerState:
             )
             if self.latest_event and self.latest_event.get("is_mock"):
                 self.latest_event = self.event_history[-1] if self.event_history else None
+                if self.latest_event is None:
+                    self.latest_image = None
 
     def record_state(self, payload):
         with self._lock:

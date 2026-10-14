@@ -534,10 +534,8 @@ def create_app(state=None, warning_dir=DEFAULT_WARNING_DIR,
         except ValueError:
             return jsonify({"status": "error", "message": "invalid received_at"}), 400
         is_mock = request.args.get("mock") == "1"
-        prefix = "mock_" if is_mock else ""
-        filename = f"{prefix}{received_at:.6f}.png"
-        path = entry["warning_store"].image_dir / filename
-        if not path.exists():
+        path = entry["warning_store"].find_image(received_at, is_mock=is_mock)
+        if path is None:
             return jsonify({"status": "error", "message": "no image for this warning"}), 404
         return send_file(str(path), mimetype="image/png")
 

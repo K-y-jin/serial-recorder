@@ -255,9 +255,13 @@
         justify-content: center;
       }
       #historyDetailImage {
-        max-width: 100%;
-        max-height: 320px;
+        max-width: none;
+        max-height: none;
+        flex: none;
         display: block;
+      }
+      #historyDetailImageWrap {
+        overflow: hidden;
       }
       #historyDetailNoImage {
         font-size: 16px;
@@ -662,8 +666,9 @@
         overflow: hidden;
       }
       .clientCard .clientCardThumbWrap img {
-        max-width: 100%;
-        max-height: 100%;
+        max-width: none;
+        max-height: none;
+        flex: none;
       }
       .clientCard .clientCardThumbPlaceholder {
         font-size: 13px;
@@ -887,6 +892,19 @@
       </div>
     </div>
 
+    <div id="gridWarningOverlay" class="modalOverlay" style="z-index: 56">
+      <div id="gridWarningModal" class="modalBox" style="text-align: center">
+        <h2 style="color: #ff8080">⚠ 위험 경고</h2>
+        <p id="gridWarningText"></p>
+        <button
+          id="gridWarningOpenBtn"
+          style="background: #ff3b3b; color: #fff; border: none; border-radius: 6px; padding: 8px 20px; font-size: 17px; font-weight: 600; cursor: pointer"
+        >
+          확인
+        </button>
+      </div>
+    </div>
+
     <div id="connLostOverlay">
       <div id="connLostModal">
         <h2>⚠ 장치 연결 끊김</h2>
@@ -1021,10 +1039,64 @@
         return new Date(lastSeen * 1000).toLocaleTimeString("ko-KR");
       }
 
+      // The server's PNGs are the raw (rows x cols) grid; the detail page
+      // draws the grid rotated 90deg CCW, so rotate images the same way.
+      // Scales the image to fit maxW x maxH *after* rotation and returns the
+      // visual (rotated) size, since the layout box keeps the unrotated size.
+      function fitRotated(img, maxW, maxH) {
+        const W = img.naturalWidth,
+          H = img.naturalHeight;
+        if (!W || !H) return null;
+        const s = Math.min(maxW / H, maxH / W);
+        img.style.width = `${W * s}px`;
+        img.style.height = `${H * s}px`;
+        img.style.transform = "rotate(-90deg)";
+        return { w: H * s, h: W * s };
+      }
+
+      // -- 통합 화면 경고 팝업: 새 경고가 생긴 클라이언트를 모아 한 팝업에
+      // 나열한다(동시에 여러 대가 경고해도 팝업이 겹치지 않는다). 확인을 누르면
+      // 첫 번째 클라이언트의 개별 화면으로 이동한다.
+      const gridWarningOverlay = document.getElementById("gridWarningOverlay");
+      const gridWarningText = document.getElementById("gridWarningText");
+      const gridWarningClients = new Map(); // client_id -> display name
+
+      function escapeHtml(s) {
+        return String(s).replace(
+          /[&<>"']/g,
+          (ch) =>
+            ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch],
+        );
+      }
+
+      function queueGridWarning(clientId, name) {
+        gridWarningClients.set(clientId, name);
+        gridWarningText.innerHTML = [...gridWarningClients.values()]
+          .map((n) => `${escapeHtml(n)} 클라이언트에서 위험 압력 감지`)
+          .join("<br>");
+        gridWarningOverlay.classList.add("open");
+      }
+
+      document
+        .getElementById("gridWarningOpenBtn")
+        .addEventListener("click", () => {
+          const [firstId] = gridWarningClients.keys();
+          gridWarningClients.clear();
+          gridWarningOverlay.classList.remove("open");
+          if (firstId !== undefined && currentClientId === null) {
+            openClientDetail(firstId);
+          }
+        });
+
       function renderClientCard(c) {
         const wasWarning = prevClientHasWarning.get(c.client_id) ?? false;
         if (c.has_warning && !wasWarning) {
           playAlertBeep();
+          // On the grid screen (no detail view open) there is no other
+          // place the warning popup would appear.
+          if (currentClientId === null) {
+            queueGridWarning(c.client_id, c.display_name || c.client_id);
+          }
         }
         prevClientHasWarning.set(c.client_id, c.has_warning);
 
@@ -1049,7 +1121,13 @@
               : "확인 중";
 
         card.innerHTML =
-          `<div class="clientCardThumbWrap"><img loading="lazy" onerror="this.remove()" src="/image/latest?client_id=${encodeURIComponent(c.client_id)}&t=${Date.now()}"></div>` +
+          // Only show the snapshot while a warning is active; after it
+          // clears, the last warning's image would be stale.
+          `<div class="clientCardThumbWrap">${
+            c.has_warning
+              ? `<img loading="lazy" onload="fitRotated(this, this.parentElement.clientWidth, this.parentElement.clientHeight)" onerror="this.remove()" src="/image/latest?client_id=${encodeURIComponent(c.client_id)}&t=${Date.now()}">`
+              : ""
+          }</div>` +
           `<span class="clientCardBadge ${badgeClass}">${badgeText}</span>` +
           `<div class="clientCardLastSeen">마지막 수신: ${formatLastSeen(c.last_seen)}</div>` +
           `<div class="clientCardThresholds">` +
@@ -1923,6 +2001,9 @@
           `/api/history/image/${ev.received_at}${ev.is_mock ? "?mock=1" : ""}`,
         );
         historyDetailImage.onload = () => {
+          const wrap = historyDetailImage.parentElement;
+          const size = fitRotated(historyDetailImage, wrap.clientWidth - 2, 320);
+          if (size) wrap.style.height = `${size.h + 2}px`;
           historyDetailImage.style.display = "block";
         };
         historyDetailImage.onerror = () => {

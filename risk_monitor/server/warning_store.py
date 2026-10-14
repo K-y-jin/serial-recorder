@@ -36,6 +36,37 @@ class WarningStore:
         self._lock = threading.Lock()
         self.image_dir.mkdir(parents=True, exist_ok=True)
 
+    def find_image(self, received_at, is_mock=False, before=1.0, after=10.0):
+        """Path of the snapshot PNG belonging to the warning logged at
+        `received_at`, or None. POST /event and POST /image are separate
+        requests stamped independently, so a real warning's image filename
+        differs from the event's received_at by a few ms; pick the closest
+        unprefixed PNG within [-before, +after] seconds that no other
+        logged warning is closer to. Mock images share the exact stamp."""
+        if is_mock:
+            path = self.image_dir / f"mock_{received_at:.6f}.png"
+            return path if path.exists() else None
+        exact = self.image_dir / f"{received_at:.6f}.png"
+        if exact.exists():
+            return exact
+        event_times = [r.get("received_at") for r in self.read_history(limit=None)
+                       if not r.get("is_mock")]
+        event_times = [t for t in event_times if isinstance(t, (int, float))]
+        best, best_gap = None, None
+        for path in self.image_dir.glob("*.png"):
+            try:
+                ts = float(path.stem)
+            except ValueError:
+                continue  # mock_/status_ prefixed
+            if not (received_at - before <= ts <= received_at + after):
+                continue
+            gap = abs(ts - received_at)
+            if any(abs(ts - t) < gap for t in event_times):
+                continue  # closer to another warning
+            if best_gap is None or gap < best_gap:
+                best, best_gap = path, gap
+        return best
+
     def log_event(self, payload, received_at):
         """Appends one JSON line for a client risk warning (POST /event)."""
         record = dict(payload)
@@ -57,7 +88,7 @@ class WarningStore:
             with open(self.log_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
         records = []
-        for line in lines[-limit:]:
+        for line in (lines if limit is None else lines[-limit:]):
             line = line.strip()
             if not line:
                 continue

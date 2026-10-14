@@ -316,3 +316,16 @@ def test_api_clients_lists_known_clients(client):
     assert set(by_id) == {"a", "b"}
     assert by_id["a"]["has_warning"] is False
     assert by_id["b"]["has_warning"] is True
+
+
+def test_history_image_found_despite_event_image_timestamp_skew(client, tmp_path):
+    """POST /event and POST /image stamp received_at independently, so the
+    image filename differs from the logged event time by a few ms."""
+    import time
+    ev = {"accumulated_time": 1.0, "risky_idx": [1], "risky_pressure": [255],
+          "pressure_mask_idx": [1]}
+    t0 = client.post("/event", json=ev).get_json()["received_at"]
+    client.post("/image", data={"image": (io.BytesIO(b"\x89PNGfake"), "r.png")},
+                content_type="multipart/form-data")
+    assert client.get(f"/api/history/image/{t0}").status_code == 200
+    assert client.get(f"/api/history/image/{t0 + 100}").status_code == 404
