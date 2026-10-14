@@ -23,7 +23,7 @@ Usage:
     python -m client.mock_sensor [--csv client/dumpy_data/Calib31.CSV]
                                   [--link /dev/ttyUSB0] [--baud 921600]
                                   [--cols 32] [--rows 64]
-                                  [--header A55A01060801] [--pre 6] [--post 2]
+                                  [--header A55A01060801] [--pre 0] [--post 2]
                                   [--fps 30] [--seed 1234]
 """
 import argparse
@@ -151,7 +151,7 @@ def build_parser():
     p.add_argument("--cols", type=int, default=DEFAULT_COLS)
     p.add_argument("--rows", type=int, default=DEFAULT_ROWS)
     p.add_argument("--header", default=DEFAULT_HEADER_HEX, help="hex string, e.g. A55A01060801")
-    p.add_argument("--pre", type=int, default=6)
+    p.add_argument("--pre", type=int, default=0)
     p.add_argument("--post", type=int, default=2)
     p.add_argument("--fps", type=float, default=30.0)
     p.add_argument("--seed", type=int, default=None,

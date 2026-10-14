@@ -29,7 +29,7 @@ python cmd/start.py
 | `--cols`            | `32`              | 매트리스 열 수                                                                    |
 | `--rows`            | `64`              | 매트리스 행 수                                                                    |
 | `--header`          | `A55A`            | 프레임 헤더 (hex)                                                                 |
-| `--pre`             | `6`               | 헤더 뒤 skip 바이트                                                               |
+| `--pre`             | `0`               | 헤더 뒤 skip 바이트                                                               |
 | `--post`            | `2`               | 페이로드 뒤 skip 바이트                                                           |
 | `--interval`        | `1.0`             | 저장 주기 (초, `0` = 모든 프레임)                                                 |
 | `--outdir`          | `~/sensor_logs/`  | 저장 디렉토리 (파일명은 항상 `log_<timestamp>.csv`)                               |
@@ -76,7 +76,7 @@ python cmd/start.py --outdir /tmp/sensor
 python cmd/start.py --interval 0
 
 # 해상도/헤더 변경
-python cmd/start.py --cols 64 --rows 32 --header A55A --pre 6 --post 2
+python cmd/start.py --cols 64 --rows 32 --header A55A --pre 0 --post 2
 
 # wandb로 업로드 (실시간 메트릭 + 날짜 변경 시 CSV 아티팩트)
 python cmd/start.py --upload --wandb-project sensor-recorder --wandb-run-name bed01
@@ -144,7 +144,7 @@ python -m pytest tests/test_dry_run.py -v
 
 ```
 [rec] writing to /home/nrc/sensor_logs/log_20260414_152030.csv
-[cfg] port=/dev/ttyUSB0 baud=921600 cols=32 rows=64 header=A55A pre=6 post=2 interval=1.0s
+[cfg] port=/dev/ttyUSB0 baud=921600 cols=32 rows=64 header=A55A pre=0 post=2 interval=1.0s
 [serial] Connecting to /dev/ttyUSB0...
 [serial] Connected to /dev/ttyUSB0
 [rec] recording... press Ctrl+C to stop
