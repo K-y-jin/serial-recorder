@@ -13,7 +13,10 @@ block_cipher = None
 
 a = Analysis(
     ["server/win_launcher.py"],
-    pathex=["."],
+    # ".." is the repo root: server/state.py imports common.config from there,
+    # which PyInstaller's analysis can't find from risk_monitor/ alone (the
+    # sys.path insert in state.py only runs at runtime, after analysis).
+    pathex=[".", ".."],
     binaries=[],
     datas=[
         ("server/templates", "server/templates"),
@@ -22,6 +25,7 @@ a = Analysis(
     hiddenimports=[
         "server.app", "server.alert", "server.connection_monitor",
         "server.grid", "server.state", "server.warning_store",
+        "common", "common.config",
     ],
     hookspath=[],
     hooksconfig={},
