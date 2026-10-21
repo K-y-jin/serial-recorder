@@ -17,7 +17,6 @@ send attempt's success/failure is logged to send.log.
 Usage:
     python -m client.main [--port /dev/ttyUSB0] [--baud 921600]
                            [--cols 32] [--rows 64] [--header A55A01060801]
-                           [--pre 0] [--post 2]
                            [--server-url http://localhost:5000]
                            [--poll-interval 60] [--command-poll-interval 2]
                            [--http-timeout 5] [--alert-cooldown 300]
@@ -99,8 +98,6 @@ def build_parser():
     p.add_argument("--cols", type=int, default=ClientConfig.cols)
     p.add_argument("--rows", type=int, default=ClientConfig.rows)
     p.add_argument("--header", default=ClientConfig.header_hex, help="hex string, e.g. A55A")
-    p.add_argument("--pre", type=int, default=ClientConfig.pre_skip)
-    p.add_argument("--post", type=int, default=ClientConfig.post_skip)
     p.add_argument("--server-url", default=ClientConfig.server_base_url)
     p.add_argument("--config-path", default=ClientConfig.config_path)
     p.add_argument("--event-path", default=ClientConfig.event_path)
@@ -235,7 +232,7 @@ class ClientApp:
                                       self.on_frame, on_status=self.on_serial_status)
         else:
             header = bytes.fromhex(args.header.strip().replace(" ", ""))
-            parser = FrameParser(args.cols, args.rows, header, args.pre, args.post, self.on_frame)
+            parser = FrameParser(args.cols, args.rows, header, self.on_frame)
             self.reader = SerialReader(args.port, args.baud, parser, on_status=self.on_serial_status)
 
     def on_frame(self, ts, frame):

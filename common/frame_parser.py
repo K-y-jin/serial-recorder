@@ -1,23 +1,27 @@
 import time
 import numpy as np
 
+CHECKSUM_LEN = 2
+
 
 class FrameParser:
-    """Splits packets on header-to-next-header boundaries (rather than a
-    fixed packet_len), so a packet that came in short -- a dropped byte, a
-    device that occasionally sends fewer bytes than cols*rows -- doesn't
-    permanently desync the framing while it waits for bytes that will
-    never arrive. A short packet's missing payload bytes are zero-padded
-    instead, so on_frame always gets a full (rows, cols) frame."""
+    """Fixed-length packet parser with checksum verification.
 
-    def __init__(self, cols, rows, header_bytes, pre_skip, post_skip, on_frame):
+    Packet layout: header + cols*rows payload + 2-byte checksum, where the
+    checksum is a little-endian 16-bit sum of every preceding byte (header
+    included). A packet that fails the check is dropped and counted in
+    checksum_errors; the parser then resyncs on the next header, so a
+    header-like byte pattern inside the payload can't desync the framing."""
+
+    def __init__(self, cols, rows, header_bytes, on_frame):
         self.cols = cols
         self.rows = rows
         self.header = bytes(header_bytes)
-        self.pre_skip = pre_skip
-        self.post_skip = post_skip
         self.on_frame = on_frame
         self.payload_len = cols * rows
+        self.packet_len = len(self.header) + self.payload_len + CHECKSUM_LEN
+        self.frames_ok = 0
+        self.checksum_errors = 0
         self._buf = bytearray()
 
     def feed(self, data: bytes):
@@ -29,7 +33,7 @@ class FrameParser:
     def _parse(self):
         hdr = self.header
         hdr_len = len(hdr)
-        payload_start = hdr_len + self.pre_skip
+        n = self.packet_len
         while True:
             idx = self._buf.find(hdr)
             if idx < 0:
@@ -39,20 +43,20 @@ class FrameParser:
                 return
             if idx > 0:
                 del self._buf[:idx]
-            # A packet's end is only known once the *next* header shows up
-            # (packets aren't a fixed length any more); wait for it.
-            next_idx = self._buf.find(hdr, hdr_len)
-            if next_idx < 0:
+            if len(self._buf) < n:
                 return
-            payload = bytes(self._buf[payload_start:next_idx])
-            if len(payload) < self.payload_len:
-                payload = payload + b"\x00" * (self.payload_len - len(payload))
-            else:
-                payload = payload[: self.payload_len]
+            pkt = bytes(self._buf[:n])
+            expected = int.from_bytes(pkt[-CHECKSUM_LEN:], "little")
+            if (sum(pkt[:-CHECKSUM_LEN]) & 0xFFFF) != expected:
+                self.checksum_errors += 1
+                # not a real packet start (or corrupted): skip this header
+                del self._buf[:1]
+                continue
+            payload = pkt[hdr_len:hdr_len + self.payload_len]
             frame = np.frombuffer(payload, dtype=np.uint8).reshape(self.rows, self.cols)
-            ts = time.time()
+            self.frames_ok += 1
             try:
-                self.on_frame(ts, frame)
+                self.on_frame(time.time(), frame)
             except Exception:
                 pass
-            del self._buf[:next_idx]
+            del self._buf[:n]

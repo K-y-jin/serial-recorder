@@ -192,7 +192,7 @@ pytest server/tests -v
 
 ### mock_sensor — 하드웨어 없이 /dev/ttyUSB0 에뮬레이션
 
-`client/dumpy_data/Calib31.CSV`(실제 녹화된 프레임 CSV, CsvLogger wide format)를 읽어 랜덤한 행(row=프레임)부터 순서대로 실제 센서 패킷 포맷(header+payload)으로 `socat`이 만든 가상 시리얼 장치에 스트리밍합니다. `client/main.py --port /dev/ttyUSB0` 또는 `pressure_recorder`의 GUI가 실제 하드웨어처럼 이 장치를 열어 사용할 수 있습니다.
+`client/dumpy_data/Calib31.CSV`(실제 녹화된 프레임 CSV, CsvLogger wide format)를 읽어 랜덤한 행(row=프레임)부터 순서대로 실제 센서 패킷 포맷(header+payload+checksum 2바이트)로 `socat`이 만든 가상 시리얼 장치에 스트리밍합니다. `client/main.py --port /dev/ttyUSB0` 또는 `pressure_recorder`의 GUI가 실제 하드웨어처럼 이 장치를 열어 사용할 수 있습니다.
 
 `socat` 설치 필요 (`sudo apt install socat`). `/dev/ttyUSB0`에 심볼릭 링크를 만들려면 보통 sudo 권한이 필요합니다 — 권한 없이 테스트하려면 `--link /tmp/ttyUSB0` 같은 경로를 쓰고 client의 `--port`도 그 경로로 맞추면 됩니다.
 

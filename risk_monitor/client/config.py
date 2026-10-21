@@ -36,8 +36,6 @@ class ClientConfig:
     cols: int = DEFAULT_COLS
     rows: int = DEFAULT_ROWS
     header_hex: str = DEFAULT_HEADER_HEX
-    pre_skip: int = 0
-    post_skip: int = 2
 
     server_base_url: str = "http://localhost:5000"
     config_path: str = "/config"
