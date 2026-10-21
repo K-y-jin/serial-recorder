@@ -277,10 +277,7 @@ class App:
 
     # ---------------- Handlers ----------------
     def _refresh_ports(self):
-        ports = [
-            p.device for p in serial.tools.list_ports.comports()
-            if "ttyUSB" in p.device or "ttyACM" in p.device
-        ]
+        ports = sorted(p.device for p in serial.tools.list_ports.comports())
         self.cb_port["values"] = ports
         if self.var_port.get() not in ports:
             self.var_port.set(ports[0] if ports else "")
