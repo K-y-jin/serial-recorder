@@ -91,8 +91,12 @@ class RuntimeConfig:
 
 def build_detection_mask(n_cells, excluded_idx):
     """Builds a bool array of length n_cells, True everywhere except at the
-    (flat) indices listed in excluded_idx."""
+    (flat) indices listed in excluded_idx. Indices outside [0, n_cells)
+    (e.g. a mask saved for a different grid size) are ignored rather than
+    raising or -- for negative values -- wrapping to the wrong cell."""
     mask = np.ones(n_cells, dtype=bool)
     if excluded_idx:
-        mask[np.asarray(excluded_idx, dtype=np.int64)] = False
+        idx = np.asarray(excluded_idx, dtype=np.int64)
+        idx = idx[(idx >= 0) & (idx < n_cells)]
+        mask[idx] = False
     return mask

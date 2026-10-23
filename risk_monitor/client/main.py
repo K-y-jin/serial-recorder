@@ -24,6 +24,7 @@ Usage:
                            [--dry-run] [--dry-fps 30]
 """
 import argparse
+import json
 import logging
 import logging.handlers
 import os
@@ -60,6 +61,7 @@ logger = logging.getLogger("client.main")
 
 _APP_LOG_HANDLER_MARKER = "_pressure_app_log_handler"
 APP_LOG_BACKUP_DAYS = 14
+FRAME_ERROR_LOG_INTERVAL_S = 60.0
 
 
 def configure_app_log_file(warning_log_dir):
@@ -219,8 +221,9 @@ class ClientApp:
         self.image_sender = ImageSender(
             args.server_url, args.image_path, timeout_s=args.http_timeout,
             retry_delay_s=args.http_retry_delay, on_status=self.on_image_send_status,
-            client_id=client_id,
+            client_id=client_id, prepare=self._prepare_image,
         )
+        self._last_frame_error_log = -float("inf")
         self.state_sender = StateSender(
             args.server_url, args.state_path, timeout_s=args.http_timeout,
             retry_delay_s=args.http_retry_delay, on_status=self.on_state_send_status,
@@ -236,6 +239,18 @@ class ClientApp:
             self.reader = SerialReader(args.port, args.baud, parser, on_status=self.on_serial_status)
 
     def on_frame(self, ts, frame):
+        # FrameParser/FakeReader swallow callback exceptions, so log them
+        # here (at most once a minute) -- otherwise a failure would silently
+        # disable risk detection.
+        try:
+            self._process_frame(ts, frame)
+        except Exception:
+            now = time.monotonic()
+            if now - self._last_frame_error_log >= FRAME_ERROR_LOG_INTERVAL_S:
+                self._last_frame_error_log = now
+                logger.exception("[frame] processing failed")
+
+    def _process_frame(self, ts, frame):
         pressure_vector = frame.reshape(-1)
         self.latest_frame.set(ts, pressure_vector)
 
@@ -268,10 +283,26 @@ class ClientApp:
         self.warning_log.log_warning(event_payload)
         self.sender.enqueue(event_payload)
 
-        # Current frame + risk-point overlay, not an accumulated image.
+        # Rendered + saved on the image sender's worker thread (see
+        # _prepare_image), so the serial reader isn't blocked by PNG
+        # encoding and SD-card writes.
+        self.image_sender.enqueue({
+            "timestamp": ts, "pressure_vector": pressure_vector, "fired_idx": fired_idx,
+        })
+
+    def _prepare_image(self, payload):
+        """ImageSender worker thread: current frame + risk-point overlay
+        (not an accumulated image), saved locally and sent together with
+        the frame it was rendered from."""
+        payload = dict(payload)
+        pressure_vector = payload.pop("pressure_vector")
+        fired_idx = payload.pop("fired_idx")
+        ts = payload["timestamp"]
         image_bytes = render_risk_image(pressure_vector, self.args.rows, self.args.cols, fired_idx)
         self.warning_log.save_image(image_bytes, ts)
-        self.image_sender.enqueue({"image": image_bytes, "timestamp": ts})
+        payload["image"] = image_bytes
+        payload["pressure"] = json.dumps(pressure_vector.tolist())
+        return payload
 
     def on_command(self, command):
         if command == "state":

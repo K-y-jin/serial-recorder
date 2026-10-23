@@ -47,8 +47,22 @@ def test_record_event_stamps_received_at_and_updates_history():
     advance(5.0)
     state.record_event({"accumulated_time": 90.0, "risky_idx": [2], "pressure_mask_idx": [2]})
     assert len(state.event_history) == 2
-    assert state.latest_event["risky_idx"] == [2]
+    # Still-active cell 1 is kept; the client only reports newly fired cells.
+    assert state.latest_event["risky_idx"] == [1, 2]
     assert state.latest_event["received_at"] == 1005.0
+    assert state.event_history[-1]["risky_idx"] == [2]
+
+
+def test_clearing_newer_cells_keeps_earlier_still_active_cells():
+    state = ServerState()
+    state.record_event({"risky_idx": [1], "risky_pressure": [200]})
+    state.record_event({"risky_idx": [2], "risky_pressure": [210]})
+    state.clear_event([2])
+    assert state.has_warning()
+    assert state.latest_event["risky_idx"] == [1]
+    assert state.latest_event["risky_pressure"] == [200]
+    state.clear_event([1])
+    assert not state.has_warning()
 
 
 def test_event_history_is_bounded():

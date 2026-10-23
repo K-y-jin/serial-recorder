@@ -96,7 +96,7 @@ python -m client.main --dry-run --server-url http://localhost:5000 \
 | `POST /event`가 올 때마다 | `warnings.log`에 JSON 한 줄 append |
 | `POST /image`가 올 때마다 | `images/<received_at>.png` |
 
-경로: `<warning-dir>`, 기본 Windows에서 `%APPDATA%\carerobot\press_warnings`, 그 외(dev/CI)는 `~/press_warnings`. `--warning-dir`로 변경 가능:
+경로: `<warning-dir>`, 기본값은 exe로 실행 시 exe와 같은 폴더의 `press_warnings` (배포 기준 `%USERPROFILE%\pressure-server\press_warnings`, `build_windows.bat`으로 재빌드해도 유지됨). 소스로 실행 시 Windows에서 `%APPDATA%\carerobot\press_warnings`, 그 외(dev/CI)는 `~/press_warnings`. `--warning-dir`로 변경 가능:
 
 ```bash
 python -m server.app --port 5000 --warning-dir /var/log/pressure/warnings

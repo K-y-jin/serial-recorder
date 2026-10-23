@@ -665,10 +665,12 @@
         margin-bottom: 10px;
         overflow: hidden;
       }
-      .clientCard .clientCardThumbWrap img {
+      .clientCard .clientCardThumbWrap canvas {
+        width: 100%;
+        height: 100%;
         max-width: none;
-        max-height: none;
-        flex: none;
+        object-fit: contain;
+        border: none;
       }
       .clientCard .clientCardThumbPlaceholder {
         font-size: 13px;
@@ -1039,19 +1041,29 @@
         return new Date(lastSeen * 1000).toLocaleTimeString("ko-KR");
       }
 
-      // The server's PNGs are the raw (rows x cols) grid; the detail page
-      // draws the grid rotated 90deg CCW, so rotate images the same way.
-      // Scales the image to fit maxW x maxH *after* rotation and returns the
-      // visual (rotated) size, since the layout box keeps the unrotated size.
-      function fitRotated(img, maxW, maxH) {
+      // The sensor grid is always shown landscape (wider than tall): a raw
+      // (rows x cols) layout that is portrait (rows > cols) is rotated 90deg
+      // CCW, a landscape/square one is shown as-is.
+      function isPortraitGrid(cols, rows) {
+        return rows > cols;
+      }
+
+      // The server's PNGs are the raw (rows x cols) grid; rotate them the
+      // same way as the grid canvas (only when portrait). Scales the image
+      // to fit maxW x maxH *after* rotation and returns the visual size,
+      // since the layout box keeps the unrotated size.
+      function fitLandscape(img, maxW, maxH) {
         const W = img.naturalWidth,
           H = img.naturalHeight;
         if (!W || !H) return null;
-        const s = Math.min(maxW / H, maxH / W);
+        const rotate = H > W;
+        const s = rotate
+          ? Math.min(maxW / H, maxH / W)
+          : Math.min(maxW / W, maxH / H);
         img.style.width = `${W * s}px`;
         img.style.height = `${H * s}px`;
-        img.style.transform = "rotate(-90deg)";
-        return { w: H * s, h: W * s };
+        img.style.transform = rotate ? "rotate(-90deg)" : "none";
+        return rotate ? { w: H * s, h: W * s } : { w: W * s, h: H * s };
       }
 
       // -- 통합 화면 경고 팝업: 새 경고가 생긴 클라이언트를 모아 한 팝업에
@@ -1121,19 +1133,20 @@
               : "확인 중";
 
         card.innerHTML =
-          // Only show the snapshot while a warning is active; after it
-          // clears, the last warning's image would be stale.
-          `<div class="clientCardThumbWrap">${
-            c.has_warning
-              ? `<img loading="lazy" onload="fitRotated(this, this.parentElement.clientWidth, this.parentElement.clientHeight)" onerror="this.remove()" src="/image/latest?client_id=${encodeURIComponent(c.client_id)}&t=${Date.now()}">`
-              : ""
-          }</div>` +
+          `<div class="clientCardThumbWrap"></div>` +
           `<span class="clientCardBadge ${badgeClass}">${badgeText}</span>` +
           `<div class="clientCardLastSeen">마지막 수신: ${formatLastSeen(c.last_seen)}</div>` +
           `<div class="clientCardThresholds">` +
           `<span class="clientCardThresholdLabel">위험 압력: ${c.critical_pressure} mmHg</span>` +
           `<span class="clientCardThresholdLabel">위험 지속 시간: ${c.critical_time} min</span>` +
           `</div>`;
+        // Same data (/api/clients' "latest" == /api/latest) and same drawing
+        // routine as the detail view, so the thumbnail matches it exactly.
+        if (c.latest) {
+          const thumb = document.createElement("canvas");
+          drawGridOn(thumb, c.latest);
+          card.querySelector(".clientCardThumbWrap").appendChild(thumb);
+        }
         card.prepend(renderClientIdHeader(c));
         return card;
       }
@@ -1512,19 +1525,22 @@
       let maskPaintValue = true; // true = mark excluded, false = clear
       let latestPressure = null; // most recent sensor pressure snapshot, for overlay in the mask editor
 
-      // Mirrors drawGrid's convention below: the sensor grid is rendered rotated
-      // 90deg CCW from its raw (row, col) layout, so the physical canvas width/
-      // height are swapped (rows drive width, cols drive height) and the same
-      // translate+rotate transform is applied before any fillRect calls, which
-      // stay in raw (col*CELL, row*CELL) space. The mask editor must match this
-      // exactly, or its cols/rows orientation looks flipped relative to the main
-      // grid above and the sensor readings drawn in the background.
+      // Mirrors drawGridOn's convention below: a portrait sensor grid is
+      // rendered rotated 90deg CCW from its raw (row, col) layout, so the
+      // physical canvas width/height are swapped (rows drive width, cols drive
+      // height) and the same translate+rotate transform is applied before any
+      // fillRect calls, which stay in raw (col*CELL, row*CELL) space. The mask
+      // editor must match this exactly, or its cols/rows orientation looks
+      // flipped relative to the main grid and the sensor readings drawn in
+      // the background.
       function drawMaskEditor() {
         if (!maskCols || !maskRows) return;
         maskCtx.setTransform(1, 0, 0, 1, 0, 0);
         maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-        maskCtx.translate(0, maskCanvas.height);
-        maskCtx.rotate(-Math.PI / 2);
+        if (isPortraitGrid(maskCols, maskRows)) {
+          maskCtx.translate(0, maskCanvas.height);
+          maskCtx.rotate(-Math.PI / 2);
+        }
 
         if (latestPressure && latestPressure.length === maskCols * maskRows) {
           for (let i = 0; i < latestPressure.length; i++) {
@@ -1573,10 +1589,11 @@
         maskCols = cols;
         maskRows = rows;
         excludedIdx = new Set(excludedList);
-        // Swapped to match the CCW rotation applied in drawMaskEditor (same as
-        // the main grid canvas: width follows rows, height follows cols).
-        maskCanvas.width = rows * MASK_CELL;
-        maskCanvas.height = cols * MASK_CELL;
+        // Swapped when portrait to match the CCW rotation applied in
+        // drawMaskEditor (same as the main grid canvas).
+        const rotate = isPortraitGrid(cols, rows);
+        maskCanvas.width = (rotate ? rows : cols) * MASK_CELL;
+        maskCanvas.height = (rotate ? cols : rows) * MASK_CELL;
         drawMaskEditor();
       }
 
@@ -1586,9 +1603,13 @@
         const scaleY = maskCanvas.height / rect.height;
         const screenX = (e.clientX - rect.left) * scaleX;
         const screenY = (e.clientY - rect.top) * scaleY;
-        // Inverse of the translate(0,H)+rotate(-90deg) transform used for drawing.
-        const row = Math.floor(screenX / MASK_CELL);
-        const col = Math.floor((maskCanvas.height - screenY) / MASK_CELL);
+        // Inverse of the (portrait-only) translate(0,H)+rotate(-90deg)
+        // transform used for drawing.
+        const rotate = isPortraitGrid(maskCols, maskRows);
+        const row = Math.floor((rotate ? screenX : screenY) / MASK_CELL);
+        const col = rotate
+          ? Math.floor((maskCanvas.height - screenY) / MASK_CELL)
+          : Math.floor(screenX / MASK_CELL);
         if (col < 0 || col >= maskCols || row < 0 || row >= maskRows)
           return null;
         return row * maskCols + col;
@@ -1621,7 +1642,7 @@
             await putConfig({ mask_excluded_idx: Array.from(excludedIdx) });
             showSettingsMsg("마스크가 저장되었습니다.");
           } catch (e) {
-            showSettingsMsg("저장 실패", true);
+            showSettingsMsg(`저장 실패: ${e.message}`, true);
           }
         });
 
@@ -1634,7 +1655,7 @@
             await putConfig({ mask_excluded_idx: [] });
             showSettingsMsg("마스크가 초기화되었습니다.");
           } catch (e) {
-            showSettingsMsg("저장 실패", true);
+            showSettingsMsg(`저장 실패: ${e.message}`, true);
           }
         });
 
@@ -1700,7 +1721,11 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updates),
         });
-        return resp.json();
+        const data = await resp.json();
+        // The server rejects invalid values (400) -- surface that instead of
+        // reporting success.
+        if (!resp.ok) throw new Error(data.message || `HTTP ${resp.status}`);
+        return data;
       }
 
       document
@@ -1713,7 +1738,7 @@
             });
             showSettingsMsg("위험 감지 설정이 저장되었습니다.");
           } catch (e) {
-            showSettingsMsg("저장 실패", true);
+            showSettingsMsg(`저장 실패: ${e.message}`, true);
           }
         });
 
@@ -1728,7 +1753,7 @@
             });
             showSettingsMsg("개발자 설정이 저장되었습니다.");
           } catch (e) {
-            showSettingsMsg("저장 실패", true);
+            showSettingsMsg(`저장 실패: ${e.message}`, true);
           }
         });
 
@@ -1836,26 +1861,36 @@
 
       const CELL = 2.5; // px per grid cell, square (1/4 of the original 10px)
 
-      // The grid is drawn rotated 90° counter-clockwise from its raw (row, col)
-      // layout: fill/render calls below use the raw coordinate space, and a
-      // canvas transform (translate + rotate(-90deg)) maps that space onto the
-      // visible (swapped-dimension) canvas.
       function drawGrid(data) {
+        drawGridOn(canvas, data);
+      }
+
+      // Shared by the detail view and the client cards. Fill calls below use
+      // the raw (row, col) coordinate space; if the raw grid is portrait
+      // (see isPortraitGrid) a canvas transform (translate + rotate(-90deg))
+      // maps that space onto a swapped-dimension canvas, so the result is
+      // always landscape.
+      function drawGridOn(canvas, data) {
+        const ctx = canvas.getContext("2d");
         const cols = data.cols,
           rows = data.rows;
         const rawW = cols * CELL,
           rawH = rows * CELL;
+        const rotate = isPortraitGrid(cols, rows);
+        const w = rotate ? rawH : rawW,
+          h = rotate ? rawW : rawH;
 
-        // CCW 90 rotation swaps displayed width/height relative to the raw grid.
-        if (canvas.width !== rawH || canvas.height !== rawW) {
-          canvas.width = rawH;
-          canvas.height = rawW;
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
         }
 
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.translate(0, canvas.height);
-        ctx.rotate(-Math.PI / 2);
+        if (rotate) {
+          ctx.translate(0, canvas.height);
+          ctx.rotate(-Math.PI / 2);
+        }
 
         const state = data.latest_state;
         if (state && state.pressure && state.pressure.length === cols * rows) {
@@ -2002,7 +2037,7 @@
         );
         historyDetailImage.onload = () => {
           const wrap = historyDetailImage.parentElement;
-          const size = fitRotated(historyDetailImage, wrap.clientWidth - 2, 320);
+          const size = fitLandscape(historyDetailImage, wrap.clientWidth - 2, 320);
           if (size) wrap.style.height = `${size.h + 2}px`;
           historyDetailImage.style.display = "block";
         };
